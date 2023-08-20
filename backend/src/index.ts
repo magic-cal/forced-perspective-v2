@@ -41,7 +41,7 @@ export class ForcedPerspectiveServer {
         event: "camera-changed",
         callback: (data, broadcast) => {
           console.log("[server](camera-changed): %s", JSON.stringify(data));
-          broadcast("camera-update", data);
+          broadcast("camera-changed", data);
         },
       },
     ];
@@ -59,4 +59,4 @@ export class ForcedPerspectiveServer {
   }
 }
 
-const chatServer = new ForcedPerspectiveServer();
+new ForcedPerspectiveServer();

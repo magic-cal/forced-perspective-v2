@@ -6,7 +6,7 @@ export interface EventListener {
   event: SocketEvent;
   callback: (
     data: any,
-    broadcast: (ev: any, ...args: any[]) => boolean
+    broadcast: (ev: SocketEvent, ...args: any[]) => boolean
   ) => void;
 }
 
