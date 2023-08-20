@@ -4,6 +4,8 @@ import Resizer from "./world-utils/resizer";
 // import TWEEN from "@tweenjs/tween.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { XRControllerModelFactory } from "three/examples/jsm/webxr/XRControllerModelFactory.js";
+import { SocketEventService } from "./SocketEventService";
+import { socketEvents, SocketEvent } from "../../shared/SocketEvents";
 // import io from "socket.io-client";
 
 export interface ForcedPerspectiveOptions {
@@ -19,8 +21,13 @@ class ForcedPerspective {
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer | THREE.WebGL1Renderer;
   controls: OrbitControls;
+  socketEventService: SocketEventService;
 
-  constructor(options: ForcedPerspectiveOptions = defaultOptions) {
+  constructor(
+    options: ForcedPerspectiveOptions = defaultOptions,
+    socketEventService: SocketEventService
+  ) {
+    this.socketEventService = socketEventService;
     this.camera = this.setupCamera();
     this.scene = this.createScene({ backgroundColor: "#d3d3d3" });
     this.renderer = this.createRenderer();
@@ -30,6 +37,13 @@ class ForcedPerspective {
     this.setupDebug(options.debug);
     this.setupVr();
     this.addResizer();
+
+    this.addCameraSyncronisation();
+  }
+  addCameraSyncronisation() {
+    this.socketEventService.addEventListener("camera-changed", (data: ) => {
+      this.camera.position.set(data.x, data.y, data.z);
+    });
   }
 
   setupVr() {
@@ -88,7 +102,6 @@ class ForcedPerspective {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     renderer.render(this.scene, this.camera);
@@ -119,5 +132,5 @@ class ForcedPerspective {
   }
 }
 
-const forcedPerspective = new ForcedPerspective({ debug: true });
+const forcedPerspective = new ForcedPerspective({ debug: true }, new SocketEventService());
 forcedPerspective.start();
