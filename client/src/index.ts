@@ -7,6 +7,7 @@ import { XRControllerModelFactory } from "three/examples/jsm/webxr/XRControllerM
 import { SocketEventService } from "./SocketEventService";
 import { socketEvents, SocketEvent } from "../../shared/SocketEvents";
 // import io from "socket.io-client";
+import { debounce } from "lodash-es";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -38,12 +39,44 @@ class ForcedPerspective {
     this.setupVr();
     this.addResizer();
 
-    this.addCameraSyncronisation();
+    this.addCameraSynchronization();
+    this.addControllerSynchronization();
   }
-  addCameraSyncronisation() {
-    this.socketEventService.addEventListener("camera-changed", (data: ) => {
+  addControllerSynchronization() {
+    this.socketEventService.addEventListener<{
+      x: number;
+      y: number;
+    }>("mouse-down", (data) => {
+      console.log("mouse-down", data);
+    });
+    window.addEventListener("click", (e: MouseEvent) => {
+      this.socketEventService.emit("mouse-down", {
+        x: e.clientX,
+        y: e.clientY,
+      });
+    });
+  }
+  addCameraSynchronization() {
+    this.socketEventService.addEventListener<{
+      x: number;
+      y: number;
+      z: number;
+    }>("camera-changed", (data) => {
+      console.log("camera-changed", data);
       this.camera.position.set(data.x, data.y, data.z);
     });
+    this.controls.addEventListener(
+      "change",
+      debounce(() => {
+        console.log("camera-changed", this.camera.position);
+
+        this.socketEventService.emit("camera-changed", {
+          x: this.camera.position.x,
+          y: this.camera.position.y,
+          z: this.camera.position.z,
+        });
+      })
+    );
   }
 
   setupVr() {
@@ -132,5 +165,8 @@ class ForcedPerspective {
   }
 }
 
-const forcedPerspective = new ForcedPerspective({ debug: true }, new SocketEventService());
+const forcedPerspective = new ForcedPerspective(
+  { debug: true },
+  new SocketEventService()
+);
 forcedPerspective.start();

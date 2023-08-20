@@ -8,7 +8,7 @@ export interface SocketEventsOptions {
 
 const defaultOptions: SocketEventsOptions = {
   debug: false,
-  url: "http://localhost:3000",
+  url: "http://localhost:8080",
 };
 
 export interface SocketEventCallback<T> {
@@ -26,7 +26,7 @@ export class SocketEventService {
 
   constructor(options: SocketEventsOptions = defaultOptions) {
     this.options = options;
-    this.socket = io(options.url);
+    this.socket = io(options.url, { secure: true });
 
     this.setupDebug();
   }
