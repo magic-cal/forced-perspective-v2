@@ -1,33 +1,41 @@
+export interface ISocketEvent {}
+
+export class CameraChangedEvent implements ISocketEvent {
+  x: number;
+  y: number;
+  z: number;
+  constructor(data: { x: number; y: number; z: number }) {
+    this.x = data.x;
+    this.y = data.y;
+    this.z = data.z;
+  }
+}
+
+export class MouseDownEvent implements ISocketEvent {
+  x: number;
+  y: number;
+  constructor(data: { x: number; y: number }) {
+    this.x = data.x;
+    this.y = data.y;
+  }
+}
+
 export const socketEvents = {
-  "mouse-down": {
-    x: 0,
-    y: 0,
-  },
-  "camera-changed": {
-    x: 0,
-    y: 0,
-    z: 0,
-  },
+  "mouse-down": MouseDownEvent,
+  "camera-changed": CameraChangedEvent,
 } as const;
 
 export type SocketEvent = keyof typeof socketEvents;
-
 export type SocketEventDataType<T extends SocketEvent> =
   (typeof socketEvents)[T];
 
-// export type SocketEvents = {
-//   "mouse-down": {
-//     x: number;
-//     y: number;
-//   };
-//   "camera-changed": {
-//     x: number;
-//     y: number;
-//     z: number;
-//   };
-// };
-
-// export type SocketEvent = keyof SocketEvents;
-// export type SocketEventCallback<T extends SocketEvent> = (
-//   data: SocketEvents[T]
-// ) => void;
+export function createResponseFromEvent(socketEvent: SocketEvent, data: any) {
+  switch (socketEvent) {
+    case "camera-changed":
+      return new CameraChangedEvent(data);
+    case "mouse-down":
+      return new MouseDownEvent(data);
+    default:
+      throw new Error(`Unknown socket event ${socketEvent}`);
+  }
+}
