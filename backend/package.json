@@ -2,11 +2,11 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.ts",
+  "main": "./src/index.ts",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node-dev --respawn --transpile-only --ignore-watch node_modules index.ts"
+    "dev:server": "nodemon --config ./nodemon.config.json"
   },
   "author": "",
   "license": "ISC",
