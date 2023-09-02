@@ -1,6 +1,11 @@
 import express from "express";
 import SocketManager, { EventListener } from "./socketManager";
 import { createServer, Server as HttpServer } from "http";
+import {
+  CameraChangedEvent,
+  CameraChangedEventData,
+  MouseDownEventData,
+} from "../../shared/socketEvents";
 
 export class ForcedPerspectiveServer {
   public static readonly PORT: number = 8080;
@@ -32,14 +37,14 @@ export class ForcedPerspectiveServer {
     const eventListeners: EventListener[] = [
       {
         event: "mouse-down",
-        callback: (data, broadcast) => {
+        callback: (data: MouseDownEventData, broadcast) => {
           console.log("[server](mouse-down): %s", JSON.stringify(data));
           broadcast("mouse-down", data);
         },
       },
       {
         event: "camera-changed",
-        callback: (data, broadcast) => {
+        callback: (data: CameraChangedEventData, broadcast) => {
           console.log("[server](camera-changed): %s", JSON.stringify(data));
           broadcast("camera-changed", data);
         },

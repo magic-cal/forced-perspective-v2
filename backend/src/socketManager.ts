@@ -2,12 +2,9 @@ import { Server as HttpServer } from "http";
 import { Socket, Server as SocketIOServer } from "socket.io";
 import { SocketEvent } from "../../shared/socketEvents";
 
-export interface EventListener {
+export interface EventListener<T = any> {
   event: SocketEvent;
-  callback: (
-    data: any,
-    broadcast: (ev: SocketEvent, ...args: any[]) => boolean
-  ) => void;
+  callback: (data: T, broadcast: (ev: SocketEvent, args: T) => boolean) => void;
 }
 
 type Port = string | number;
