@@ -1,5 +1,5 @@
 import io, { Socket } from "socket.io-client";
-import { SocketEvent } from "../../shared/SocketEvents";
+import { SocketEvent } from "../../../shared/SocketEvents";
 
 export interface SocketEventsOptions {
   debug: boolean;

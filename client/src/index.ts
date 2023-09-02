@@ -3,11 +3,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import Resizer from "./world-utils/resizer";
 // import TWEEN from "@tweenjs/tween.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
-import { XRControllerModelFactory } from "three/examples/jsm/webxr/XRControllerModelFactory.js";
-import { SocketEventService } from "./SocketEventService";
-import { socketEvents, SocketEvent } from "../../shared/SocketEvents";
+import { SocketEventService } from "./sockets/SocketEventService";
 // import io from "socket.io-client";
-import { debounce } from "lodash-es";
+import { throttle } from "lodash-es";
+import { TypedSocketEventService } from "./sockets/TypedSocketEventService";
+import {
+  CameraChangedEventData,
+  MouseDownEventData,
+} from "../../shared/SocketEvents";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -17,18 +20,20 @@ const defaultOptions: ForcedPerspectiveOptions = {
   debug: false,
 };
 
+const CAMERA_THROTTLE_MS = 10;
+
 class ForcedPerspective {
   camera: THREE.PerspectiveCamera;
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer | THREE.WebGL1Renderer;
   controls: OrbitControls;
-  socketEventService: SocketEventService;
+  cameraUpdateService: TypedSocketEventService<CameraChangedEventData>;
+  mouseDownUpdateService: TypedSocketEventService<MouseDownEventData>;
 
   constructor(
     options: ForcedPerspectiveOptions = defaultOptions,
     socketEventService: SocketEventService
   ) {
-    this.socketEventService = socketEventService;
     this.camera = this.setupCamera();
     this.scene = this.createScene({ backgroundColor: "#d3d3d3" });
     this.renderer = this.createRenderer();
@@ -38,44 +43,70 @@ class ForcedPerspective {
     this.setupDebug(options.debug);
     this.setupVr();
     this.addResizer();
+    [this.cameraUpdateService, this.mouseDownUpdateService] =
+      this.addSocketUpdateServices(socketEventService);
 
     this.addCameraSynchronization();
     this.addControllerSynchronization();
   }
+
+  addSocketUpdateServices(socketEventService: SocketEventService) {
+    const cameraUpdateService =
+      new TypedSocketEventService<CameraChangedEventData>(
+        socketEventService,
+        "camera-changed"
+      );
+    const mouseDownUpdateService =
+      new TypedSocketEventService<MouseDownEventData>(
+        socketEventService,
+        "mouse-down"
+      );
+
+    return [cameraUpdateService, mouseDownUpdateService] as const;
+  }
+
   addControllerSynchronization() {
-    this.socketEventService.addEventListener<{
-      x: number;
-      y: number;
-    }>("mouse-down", (data) => {
+    this.mouseDownUpdateService.addEventListener((data) => {
       console.log("mouse-down", data);
     });
     window.addEventListener("click", (e: MouseEvent) => {
-      this.socketEventService.emit("mouse-down", {
+      this.mouseDownUpdateService.emit({
         x: e.clientX,
         y: e.clientY,
       });
     });
   }
   addCameraSynchronization() {
-    this.socketEventService.addEventListener<{
-      x: number;
-      y: number;
-      z: number;
-    }>("camera-changed", (data) => {
+    this.cameraUpdateService.addEventListener((data) => {
       console.log("camera-changed", data);
-      this.camera.position.set(data.x, data.y, data.z);
+      this.camera.position.set(
+        data.position.x,
+        data.position.y,
+        data.position.z
+      );
+      this.camera.rotation.set(
+        data.rotation.x,
+        data.rotation.y,
+        data.rotation.z
+      );
     });
     this.controls.addEventListener(
       "change",
-      debounce(() => {
+      throttle(() => {
         console.log("camera-changed", this.camera.position);
-
-        this.socketEventService.emit("camera-changed", {
-          x: this.camera.position.x,
-          y: this.camera.position.y,
-          z: this.camera.position.z,
+        this.cameraUpdateService.emit({
+          position: {
+            x: this.camera.position.x,
+            y: this.camera.position.y,
+            z: this.camera.position.z,
+          },
+          rotation: {
+            x: this.camera.rotation.x,
+            y: this.camera.rotation.y,
+            z: this.camera.rotation.z,
+          },
         });
-      })
+      }, CAMERA_THROTTLE_MS)
     );
   }
 

@@ -20,6 +20,24 @@ export class MouseDownEvent implements ISocketEvent {
   }
 }
 
+export interface CameraChangedEventData {
+  rotation: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  position: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+export interface MouseDownEventData {
+  x: number;
+  y: number;
+  itemId?: string;
+}
+
 export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
