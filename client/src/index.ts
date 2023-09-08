@@ -1,16 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import Resizer from "./world-utils/resizer";
-// import TWEEN from "@tweenjs/tween.js";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { SocketEventService } from "./sockets/SocketEventService";
-// import io from "socket.io-client";
 import { throttle } from "lodash-es";
 import { TypedSocketEventService } from "./sockets/TypedSocketEventService";
 import {
   CameraChangedEventData,
   MouseDownEventData,
 } from "../../shared/SocketEvents";
+import PlayingCardDeck from "./objects/playingCardDeck";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -29,11 +28,13 @@ class ForcedPerspective {
   controls: OrbitControls;
   cameraUpdateService: TypedSocketEventService<CameraChangedEventData>;
   mouseDownUpdateService: TypedSocketEventService<MouseDownEventData>;
+  debug: boolean;
 
   constructor(
     options: ForcedPerspectiveOptions = defaultOptions,
     socketEventService: SocketEventService
   ) {
+    this.debug = options.debug;
     this.camera = this.setupCamera();
     this.scene = this.createScene({ backgroundColor: "#d3d3d3" });
     this.renderer = this.createRenderer();
@@ -48,6 +49,7 @@ class ForcedPerspective {
 
     this.addCameraSynchronization();
     this.addControllerSynchronization();
+    this.addPlayingCardsDeck();
   }
 
   addSocketUpdateServices(socketEventService: SocketEventService) {
@@ -66,9 +68,7 @@ class ForcedPerspective {
   }
 
   addControllerSynchronization() {
-    this.mouseDownUpdateService.addEventListener((data) => {
-      console.log("mouse-down", data);
-    });
+    this.mouseDownUpdateService.addEventListener((data) => {});
     window.addEventListener("click", (e: MouseEvent) => {
       this.mouseDownUpdateService.emit({
         x: e.clientX,
@@ -78,7 +78,6 @@ class ForcedPerspective {
   }
   addCameraSynchronization() {
     this.cameraUpdateService.addEventListener((data) => {
-      console.log("camera-changed", data);
       this.camera.position.set(
         data.position.x,
         data.position.y,
@@ -93,7 +92,6 @@ class ForcedPerspective {
     this.controls.addEventListener(
       "change",
       throttle(() => {
-        console.log("camera-changed", this.camera.position);
         this.cameraUpdateService.emit({
           position: {
             x: this.camera.position.x,
@@ -132,8 +130,12 @@ class ForcedPerspective {
     this.scene.add(new THREE.GridHelper(10, 10));
   }
 
+  addPlayingCardsDeck() {
+    const playingCardDeck = new PlayingCardDeck(this.scene);
+    playingCardDeck.createDeck();
+  }
+
   addCube() {
-    console.log("tempInit");
     const geometry = new THREE.BoxGeometry(2, 2, 2);
     const material = new THREE.MeshBasicMaterial({
       color: "#FF0000",
