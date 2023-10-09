@@ -13,10 +13,14 @@ export default class PlayingCardDeck {
 
   createDeck(): void {
     // Create a playingCard for each card in the deck
+    let xOffset = 0;
     let zOffset = 0;
+    let yOffset = 0;
+
     for (const card of allCards) {
       zOffset += cardDimensions[2];
-      const position: Coord3D = [0, 0, zOffset];
+
+      const position: Coord3D = [xOffset, yOffset, zOffset];
       const playingCard = this.createPlayingCard(position, card.suit, card.pip);
       this.addPlayingCard(playingCard);
     }
@@ -29,6 +33,19 @@ export default class PlayingCardDeck {
   addPlayingCard(playingCard: PlayingCard): void {
     this.playingCards.push(playingCard);
     this.scene.add(playingCard.getCardMesh());
+  }
+
+  moveCardsToRandomPositions(): void {
+    console.log("Moving cards to random positions");
+    for (const playingCard of this.playingCards) {
+      const newPosition: Coord3D = [
+        // Integer between 1 and 10
+        Math.floor(Math.random() * 10) + 1,
+        Math.floor(Math.random() * 10) + 1,
+        Math.floor(Math.random() * 10) + 1,
+      ];
+      playingCard.moveCardToSmoothly(newPosition);
+    }
   }
 
   // updateSwarmBehavior(): void {

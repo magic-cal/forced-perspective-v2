@@ -40,8 +40,8 @@ const allPips = [
   Pip.King,
 ];
 
-export const allCards = allSuits.flatMap((suit) =>
-  allPips.map((pip) => ({ suit, pip }))
+export const allCards = allSuits.flatMap(
+  (suit) => allPips.map((pip) => ({ suit, pip }))[0]
 );
 export const suitToLetter = (suit: Suit) => {
   switch (suit) {

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Mesh } from "three";
 import { Coord3D } from "../types/world";
 import { Pip, Suit, cardDimensions, suitToLetter } from "../types/cards";
+import { Tween, Easing } from "@tweenjs/tween.js";
 
 const txtLoader = new THREE.TextureLoader();
 const colorLight = new THREE.Color(0xffffff);
@@ -18,6 +19,7 @@ let faceDownMaterial = new THREE.MeshPhongMaterial({
   shininess: 40,
   depthTest: false,
 });
+const defaultAnimationDurationMs = 2 * 1000;
 
 export default class PlayingCard {
   private position: Coord3D;
@@ -77,5 +79,23 @@ export default class PlayingCard {
     return this.cardMesh;
   }
 
-  // Other card-related methods (flipCard, moveCardToSmoothly, etc.) can go here.
+  public getPosition() {
+    return this.position;
+  }
+
+  public moveCardToSmoothly(
+    newPosition: Coord3D,
+    durationMs = defaultAnimationDurationMs
+  ): void {
+    console.log(`Moving card to ${newPosition} from ${this.cardMesh.position}`);
+    const endPosition = new THREE.Vector3(...newPosition);
+
+    const tween = new Tween(this.cardMesh.position)
+      .to(endPosition, durationMs)
+      .onUpdate(() => {
+        console.log(`Updating card position to ${this.cardMesh.position}`);
+      })
+      .easing(Easing.Quadratic.Out);
+    tween.start();
+  }
 }

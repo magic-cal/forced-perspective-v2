@@ -10,6 +10,7 @@ import {
   MouseDownEventData,
 } from "../../shared/SocketEvents";
 import PlayingCardDeck from "./objects/playingCardDeck";
+import TWEEN from "@tweenjs/tween.js";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -133,6 +134,9 @@ class ForcedPerspective {
   addPlayingCardsDeck() {
     const playingCardDeck = new PlayingCardDeck(this.scene);
     playingCardDeck.createDeck();
+    setTimeout(() => {
+      playingCardDeck.moveCardsToRandomPositions();
+    }, 3000);
   }
 
   addCube() {
@@ -194,6 +198,7 @@ class ForcedPerspective {
   start() {
     this.renderer.setAnimationLoop(() => {
       this.renderer.render(this.scene, this.camera);
+      TWEEN.update();
     });
   }
 }
