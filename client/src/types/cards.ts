@@ -56,4 +56,4 @@ export const suitToLetter = (suit: Suit) => {
   }
 };
 
-export const cardDimensions: Coord3D = [5, 5, 0.1];
+export const cardDimensions: Coord3D = [5, 5, 0.02];
