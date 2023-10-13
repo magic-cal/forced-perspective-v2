@@ -9,7 +9,7 @@ import {
   CameraChangedEventData,
   MouseDownEventData,
 } from "../../shared/SocketEvents";
-import PlayingCardDeck from "./objects/playingCardDeck";
+import PlayingCardManager from "./objects/playingCardManager";
 import TWEEN from "@tweenjs/tween.js";
 
 export interface ForcedPerspectiveOptions {
@@ -50,7 +50,7 @@ class ForcedPerspective {
 
     this.addCameraSynchronization();
     this.addControllerSynchronization();
-    this.addPlayingCardsDeck();
+    this.addPlayingCardsManager();
   }
 
   addSocketUpdateServices(socketEventService: SocketEventService) {
@@ -131,11 +131,11 @@ class ForcedPerspective {
     this.scene.add(new THREE.GridHelper(10, 10));
   }
 
-  addPlayingCardsDeck() {
-    const playingCardDeck = new PlayingCardDeck(this.scene);
-    playingCardDeck.createDeck();
+  addPlayingCardsManager() {
+    const playingCardManager = new PlayingCardManager(this.scene);
+    playingCardManager.createStack();
     setTimeout(() => {
-      playingCardDeck.moveCardsToRandomPositions();
+      playingCardManager.moveCardsToRandomPositions();
     }, 3000);
   }
 

@@ -2,7 +2,7 @@ import { Pip, Suit, allCards, cardDimensions } from "../types/cards";
 import { Coord3D } from "../types/world";
 import PlayingCard from "./playingCard";
 
-export default class PlayingCardDeck {
+export default class PlayingCardManager {
   private scene: THREE.Scene;
   private playingCards: PlayingCard[]; // Specify the type
 
@@ -11,8 +11,8 @@ export default class PlayingCardDeck {
     this.playingCards = [];
   }
 
-  createDeck(): void {
-    // Create a playingCard for each card in the deck
+  createStack(): void {
+    // Create a playingCard for each card in the stack
     let xOffset = 0;
     let zOffset = 0;
     let yOffset = 0;
