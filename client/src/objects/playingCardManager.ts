@@ -1,29 +1,44 @@
-import { Pip, Suit, allCards, cardDimensions } from "../types/cards";
+import {
+  Pip,
+  Suit,
+  playingCard52,
+  CARD_DIMENSIONS,
+  CARD_PADDING,
+} from "../types/cards";
 import { Coord3D } from "../types/world";
+import { PositionGenerator } from "./PositionGenerator";
 import PlayingCard from "./playingCard";
 
 export default class PlayingCardManager {
   private scene: THREE.Scene;
   private playingCards: PlayingCard[]; // Specify the type
+  private positionManager: PositionGenerator;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.playingCards = [];
+    this.positionManager = new PositionGenerator(
+      this.playingCards.length,
+      CARD_DIMENSIONS
+    );
   }
 
   createStack(): void {
     // Create a playingCard for each card in the stack
+    let yOffset = 0;
     let xOffset = 0;
     let zOffset = 0;
-    let yOffset = 0;
 
-    for (const card of allCards) {
-      zOffset += cardDimensions[2];
+    for (const card of playingCard52) {
+      zOffset += CARD_DIMENSIONS[2];
 
       const position: Coord3D = [xOffset, yOffset, zOffset];
       const playingCard = this.createPlayingCard(position, card.suit, card.pip);
       this.addPlayingCard(playingCard);
     }
+    this.positionManager.setNumberOfObjects(this.playingCards.length);
+    this.moveCardsToStackedPositions();
+    this.moveCardsToGridPositions2d(13, 4);
   }
 
   createPlayingCard(position: Coord3D, suit: Suit, pip: Pip): PlayingCard {
@@ -35,16 +50,34 @@ export default class PlayingCardManager {
     this.scene.add(playingCard.getCardMesh());
   }
 
-  moveCardsToRandomPositions(): void {
-    console.log("Moving cards to random positions");
-    for (const playingCard of this.playingCards) {
-      const newPosition: Coord3D = [
-        // Integer between 1 and 10
-        Math.floor(Math.random() * 10) + 1,
-        Math.floor(Math.random() * 10) + 1,
-        Math.floor(Math.random() * 10) + 1,
-      ];
-      playingCard.moveCardToSmoothly(newPosition);
+  moveCardsToRandomPositions() {
+    this.updateCardPositions(this.positionManager.generateRandomPositions());
+  }
+
+  moveCardsToStackedPositions() {
+    this.updateCardPositions(
+      this.positionManager.generateStackedPositions([0, 0, 0])
+    );
+  }
+
+  moveCardsToGridPositions2d(columns: number, rows: number) {
+    this.updateCardPositions(
+      this.positionManager.generateGridPositions2d([0, 0, 0], columns, rows, [
+        CARD_PADDING[0],
+        CARD_PADDING[1],
+      ])
+    );
+  }
+
+  moveCardsToSpiralPositions() {
+    this.updateCardPositions(
+      this.positionManager.generateSpiralPositions([0, 0, 0])
+    );
+  }
+
+  updateCardPositions(positions: Coord3D[]) {
+    for (let i = 0; i < this.playingCards.length; i++) {
+      this.playingCards[i].moveCardToSmoothly(positions[i]);
     }
   }
 

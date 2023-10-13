@@ -1,5 +1,10 @@
 import { Coord3D } from "./world";
 
+export type Card = {
+  suit: Suit;
+  pip: Pip;
+};
+
 export enum Suit {
   Clubs = 0,
   Hearts = 1,
@@ -40,9 +45,14 @@ const allPips = [
   Pip.King,
 ];
 
-export const allCards = allSuits.flatMap(
-  (suit) => allPips.map((pip) => ({ suit, pip }))[0]
+export const playingCard52 = allSuits.flatMap((suit) =>
+  allPips.map((pip) => ({ suit, pip }))
 );
+
+export const oneWayDeck52 = (card: Card) => {
+  return Array.from({ length: 52 }, () => card);
+};
+
 export const suitToLetter = (suit: Suit) => {
   switch (suit) {
     case Suit.Clubs:
@@ -56,4 +66,5 @@ export const suitToLetter = (suit: Suit) => {
   }
 };
 
-export const cardDimensions: Coord3D = [5, 5, 0.02];
+export const CARD_DIMENSIONS: Coord3D = [3.5, 5, 0.02];
+export const CARD_PADDING: Coord3D = [0.1, 0.1, 0.1];

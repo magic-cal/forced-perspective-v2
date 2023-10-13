@@ -135,8 +135,8 @@ class ForcedPerspective {
     const playingCardManager = new PlayingCardManager(this.scene);
     playingCardManager.createStack();
     setTimeout(() => {
-      playingCardManager.moveCardsToRandomPositions();
-    }, 3000);
+      playingCardManager.moveCardsToSpiralPositions();
+    }, 5000);
   }
 
   addCube() {

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Mesh } from "three";
 import { Coord3D } from "../types/world";
-import { Pip, Suit, cardDimensions, suitToLetter } from "../types/cards";
+import { Pip, Suit, CARD_DIMENSIONS, suitToLetter } from "../types/cards";
 import { Tween, Easing } from "@tweenjs/tween.js";
 
 const txtLoader = new THREE.TextureLoader();
@@ -50,7 +50,7 @@ export default class PlayingCard {
       depthTest: false,
     });
 
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...cardDimensions), [
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...CARD_DIMENSIONS), [
       darkMaterial,
       darkMaterial,
       darkMaterial,
@@ -61,7 +61,6 @@ export default class PlayingCard {
 
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.scale.x = 0.65;
     mesh.castShadow = true;
     mesh.position.set(...this.position);
 
@@ -94,6 +93,21 @@ export default class PlayingCard {
       .to(endPosition, durationMs)
       .onUpdate(() => {
         console.log(`Updating card position to ${this.cardMesh.position}`);
+      })
+      .easing(Easing.Quadratic.Out);
+    tween.start();
+  }
+
+  public rotateCardToSmoothly(
+    newRotation: Coord3D,
+    durationMs = defaultAnimationDurationMs
+  ): void {
+    const endRotation = new THREE.Euler(...newRotation);
+
+    const tween = new Tween(this.cardMesh.rotation)
+      .to(endRotation, durationMs)
+      .onUpdate(() => {
+        console.log(`Updating card rotation to ${this.cardMesh.rotation}`);
       })
       .easing(Easing.Quadratic.Out);
     tween.start();
