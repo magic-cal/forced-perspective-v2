@@ -4,9 +4,11 @@ import {
   playingCard52,
   CARD_DIMENSIONS,
   CARD_PADDING,
+  Card,
 } from "../types/cards";
 import { Coord3D } from "../types/world";
 import { PositionGenerator } from "./PositionGenerator";
+import { Object3D } from "three";
 import PlayingCard from "./playingCard";
 
 export default class PlayingCardManager {
@@ -23,13 +25,13 @@ export default class PlayingCardManager {
     );
   }
 
-  createStack(): void {
+  createStack(playingCards: Card[] = playingCard52): void {
     // Create a playingCard for each card in the stack
     let yOffset = 0;
     let xOffset = 0;
     let zOffset = 0;
 
-    for (const card of playingCard52) {
+    for (const card of playingCards) {
       zOffset += CARD_DIMENSIONS[2];
 
       const position: Coord3D = [xOffset, yOffset, zOffset];
@@ -38,7 +40,6 @@ export default class PlayingCardManager {
     }
     this.positionManager.setNumberOfObjects(this.playingCards.length);
     this.moveCardsToStackedPositions();
-    this.moveCardsToGridPositions2d(13, 4);
   }
 
   createPlayingCard(position: Coord3D, suit: Suit, pip: Pip): PlayingCard {
@@ -78,6 +79,15 @@ export default class PlayingCardManager {
   updateCardPositions(positions: Coord3D[]) {
     for (let i = 0; i < this.playingCards.length; i++) {
       this.playingCards[i].moveCardToSmoothly(positions[i]);
+    }
+  }
+
+  selectCard(object: Object3D<THREE.Event>) {
+    const card = this.playingCards.find(
+      (card) => card.getCardMesh().uuid === object.uuid
+    );
+    if (card) {
+      card.select();
     }
   }
 

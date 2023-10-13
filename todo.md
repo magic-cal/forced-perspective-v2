@@ -1,7 +1,7 @@
 # Critical path
 
-- [ ] View of all cards simple
-- [ ] View of all cards with animation
+- [x] View of all cards simple
+- [x] View of all cards with animation
 - [ ] Card interaction
 - [ ] Card switching
 - [ ] Perspective mirroring with alternate view
@@ -17,6 +17,7 @@
 - [x] Decouple the Dom and interactive elements - Tidy up
 - [x] Move the socket to a separate file
 - [x] Move the cards logic to a manager
+- [ ] Don't expose the mesh of the card
 - [ ] Cards surrounding user
 - [ ] CI/CD pipeline
 - [ ] Get controller raycast to match UI

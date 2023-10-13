@@ -9,8 +9,10 @@ import {
   CameraChangedEventData,
   MouseDownEventData,
 } from "../../shared/SocketEvents";
-import PlayingCardManager from "./objects/playingCardManager";
+import PlayingCardManager from "./objects/PlayingCardManager";
 import TWEEN from "@tweenjs/tween.js";
+import CardRaycaster from "./objects/CardSelector";
+import { playingCards1 } from "./types/cards";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -29,6 +31,8 @@ class ForcedPerspective {
   controls: OrbitControls;
   cameraUpdateService: TypedSocketEventService<CameraChangedEventData>;
   mouseDownUpdateService: TypedSocketEventService<MouseDownEventData>;
+  playingCardManager: PlayingCardManager;
+  cardRaycaster: CardRaycaster;
   debug: boolean;
 
   constructor(
@@ -47,10 +51,27 @@ class ForcedPerspective {
     this.addResizer();
     [this.cameraUpdateService, this.mouseDownUpdateService] =
       this.addSocketUpdateServices(socketEventService);
-
     this.addCameraSynchronization();
     this.addControllerSynchronization();
-    this.addPlayingCardsManager();
+    this.playingCardManager = this.addPlayingCardsManager();
+    this.cardRaycaster = this.addCardRaycaster();
+  }
+  addCardRaycaster() {
+    const cardRaycaster = new CardRaycaster(
+      this.scene,
+      this.camera,
+      this.playingCardManager
+    );
+
+    window.addEventListener("click", (e: MouseEvent) => {
+      const mousePosition = new THREE.Vector2(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1
+      );
+      cardRaycaster.selectObjects(mousePosition);
+    });
+
+    return cardRaycaster;
   }
 
   addSocketUpdateServices(socketEventService: SocketEventService) {
@@ -133,10 +154,12 @@ class ForcedPerspective {
 
   addPlayingCardsManager() {
     const playingCardManager = new PlayingCardManager(this.scene);
-    playingCardManager.createStack();
-    setTimeout(() => {
-      playingCardManager.moveCardsToSpiralPositions();
-    }, 5000);
+    playingCardManager.createStack(playingCards1());
+    // setTimeout(() => {
+    //   playingCardManager.moveCardsToSpiralPositions();
+    // }, 5000);
+
+    return playingCardManager;
   }
 
   addCube() {

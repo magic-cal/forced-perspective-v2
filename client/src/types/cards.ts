@@ -53,6 +53,13 @@ export const oneWayDeck52 = (card: Card) => {
   return Array.from({ length: 52 }, () => card);
 };
 
+export const aceOfSpades = { suit: Suit.Spades, pip: Pip.Ace };
+export const kingOfHearts = { suit: Suit.Hearts, pip: Pip.King };
+
+export const playingCards1 = (card: Card = aceOfSpades) => {
+  return [aceOfSpades];
+};
+
 export const suitToLetter = (suit: Suit) => {
   switch (suit) {
     case Suit.Clubs:

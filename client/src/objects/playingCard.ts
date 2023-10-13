@@ -1,7 +1,15 @@
 import * as THREE from "three";
 import { Mesh } from "three";
 import { Coord3D } from "../types/world";
-import { Pip, Suit, CARD_DIMENSIONS, suitToLetter } from "../types/cards";
+import {
+  Pip,
+  Suit,
+  CARD_DIMENSIONS,
+  suitToLetter,
+  Card,
+  aceOfSpades,
+  kingOfHearts,
+} from "../types/cards";
 import { Tween, Easing } from "@tweenjs/tween.js";
 
 const txtLoader = new THREE.TextureLoader();
@@ -22,6 +30,11 @@ let faceDownMaterial = new THREE.MeshPhongMaterial({
 const defaultAnimationDurationMs = 2 * 1000;
 
 export default class PlayingCard {
+  select() {
+    console.log("selecting card");
+    this.updateCardValue(kingOfHearts);
+  }
+
   private position: Coord3D;
   private suit: Suit;
   private pip: Pip;
@@ -34,10 +47,13 @@ export default class PlayingCard {
     this.cardMesh = this.createCardMesh();
   }
 
+  updateCardValue(card: Card) {
+    this.suit = card.suit;
+    this.pip = card.pip;
+    this.cardMesh = this.createCardMesh();
+  }
+
   private createCardMesh() {
-    console.log(
-      `Creating card mesh for ${suitToLetter(this.suit)}-${this.pip}`
-    );
     let faceUpTexture = txtLoader.load(
       `src/assets/playingCardFaces/${suitToLetter(this.suit)}-${this.pip}.svg`
     );
@@ -63,6 +79,7 @@ export default class PlayingCard {
     mesh.receiveShadow = true;
     mesh.castShadow = true;
     mesh.position.set(...this.position);
+    mesh.userData = { card: `${suitToLetter(this.suit)}-${this.pip}111` };
 
     return mesh;
 
@@ -75,6 +92,7 @@ export default class PlayingCard {
   }
 
   public getCardMesh() {
+    console.log(this.cardMesh.uuid);
     return this.cardMesh;
   }
 
@@ -86,14 +104,10 @@ export default class PlayingCard {
     newPosition: Coord3D,
     durationMs = defaultAnimationDurationMs
   ): void {
-    console.log(`Moving card to ${newPosition} from ${this.cardMesh.position}`);
     const endPosition = new THREE.Vector3(...newPosition);
 
     const tween = new Tween(this.cardMesh.position)
       .to(endPosition, durationMs)
-      .onUpdate(() => {
-        console.log(`Updating card position to ${this.cardMesh.position}`);
-      })
       .easing(Easing.Quadratic.Out);
     tween.start();
   }
@@ -106,9 +120,7 @@ export default class PlayingCard {
 
     const tween = new Tween(this.cardMesh.rotation)
       .to(endRotation, durationMs)
-      .onUpdate(() => {
-        console.log(`Updating card rotation to ${this.cardMesh.rotation}`);
-      })
+
       .easing(Easing.Quadratic.Out);
     tween.start();
   }

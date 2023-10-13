@@ -1,4 +1,4 @@
-import PlayingCard from "../../objects/playingCard";
+import PlayingCard from "../../objects/PlayingCard";
 import { Coord3D } from "../../types/world";
 
 export default interface MovementStrategy {
