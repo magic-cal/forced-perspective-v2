@@ -30,11 +30,6 @@ let faceDownMaterial = new THREE.MeshPhongMaterial({
 const defaultAnimationDurationMs = 2 * 1000;
 
 export default class PlayingCard {
-  select() {
-    console.log("selecting card");
-    this.updateCardValue(kingOfHearts);
-  }
-
   private position: Coord3D;
   private suit: Suit;
   private pip: Pip;
@@ -47,13 +42,25 @@ export default class PlayingCard {
     this.cardMesh = this.createCardMesh();
   }
 
+  select() {
+    console.log("selecting card");
+    if (this.pip === Pip.Ace) {
+      this.updateCardValue(kingOfHearts);
+    } else {
+      this.updateCardValue(aceOfSpades);
+    }
+  }
+
   updateCardValue(card: Card) {
     this.suit = card.suit;
     this.pip = card.pip;
-    this.cardMesh = this.createCardMesh();
+
+    if (Array.isArray(this.cardMesh.material)) {
+      this.cardMesh.material[4] = this.createFaceUpTexture();
+    }
   }
 
-  private createCardMesh() {
+  private createFaceUpTexture() {
     let faceUpTexture = txtLoader.load(
       `src/assets/playingCardFaces/${suitToLetter(this.suit)}-${this.pip}.svg`
     );
@@ -65,6 +72,11 @@ export default class PlayingCard {
       shininess: 40,
       depthTest: false,
     });
+    return faceUpMaterial;
+  }
+
+  private createCardMesh() {
+    const faceUpMaterial = this.createFaceUpTexture();
 
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...CARD_DIMENSIONS), [
       darkMaterial,
