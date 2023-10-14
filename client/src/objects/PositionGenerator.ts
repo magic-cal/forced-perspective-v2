@@ -89,31 +89,51 @@ export class PositionGenerator {
     return positions;
   }
 
-  public generateSpiralPositions(
+  public generateHelixPositions(
     centerPoint: Coord3D,
     radius: number = 10,
     height: number = 10
   ): Coord3D[] {
     const positions: Coord3D[] = [];
 
-    const numberOfObjects = this.numberOfObjects;
-    const heightStep = height / numberOfObjects;
-    const radiusStep = radius / numberOfObjects;
-
-    const startingPosition = [
-      centerPoint[0] + radius,
-      centerPoint[1] - height / 2,
-      0,
-    ];
-
-    for (let i = 0; i < numberOfObjects; i++) {
-      const angle = 0.1 * i;
-      const x = startingPosition[0] * Math.cos(angle);
-      const y = startingPosition[1] + heightStep * i;
-      const z = startingPosition[2] + radiusStep * i;
+    for (let i = 0; i < this.numberOfObjects; i++) {
+      const angle = (i * Math.PI * 2) / this.numberOfObjects;
+      const x = centerPoint[0] + radius * Math.sin(angle);
+      const y = centerPoint[1] + (height / this.numberOfObjects) * i;
+      const z = centerPoint[2] + radius * Math.cos(angle);
       positions.push([x, y, z]);
     }
 
+    return positions;
+  }
+
+  /**
+   *
+   * 3d sphere packing algorithm
+   * https://stackoverflow.com/questions/9600801/evenly-distributing-n-points-on-a-sphere
+   *
+   * @param centerPoint
+   * @param radius
+   */
+  public generateSpherePositions(
+    centerPoint: Coord3D,
+    radius: number = 10
+  ): Coord3D[] {
+    const positions: Coord3D[] = [];
+
+    const n = this.numberOfObjects;
+    const phi = Math.PI * (3 - Math.sqrt(5)); // golden angle in radians
+
+    for (let i = 0; i < n; i++) {
+      const theta = phi * i; // golden angle increment
+      const y = 1 - (i / (n - 1)) * 2; // y goes from 1 to -1
+      const radiusAtY = Math.sqrt(1 - y * y) * radius;
+
+      const x = Math.cos(theta) * radiusAtY + centerPoint[0];
+      const z = Math.sin(theta) * radiusAtY + centerPoint[2];
+
+      positions.push([x, y * radius + centerPoint[1], z]);
+    }
     return positions;
   }
 }

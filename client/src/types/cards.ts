@@ -45,7 +45,7 @@ const allPips = [
   Pip.King,
 ];
 
-export const playingCard52 = allSuits.flatMap((suit) =>
+export const playingCards52 = allSuits.flatMap((suit) =>
   allPips.map((pip) => ({ suit, pip }))
 );
 

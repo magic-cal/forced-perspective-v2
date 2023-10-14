@@ -1,7 +1,7 @@
 import {
   Pip,
   Suit,
-  playingCard52,
+  playingCards52,
   CARD_DIMENSIONS,
   CARD_PADDING,
   Card,
@@ -25,7 +25,7 @@ export default class PlayingCardManager {
     );
   }
 
-  createStack(playingCards: Card[] = playingCard52): void {
+  createStack(playingCards: Card[] = playingCards52): void {
     // Create a playingCard for each card in the stack
     let yOffset = 0;
     let xOffset = 0;
@@ -72,7 +72,13 @@ export default class PlayingCardManager {
 
   moveCardsToSpiralPositions() {
     this.updateCardPositions(
-      this.positionManager.generateSpiralPositions([0, 0, 0])
+      this.positionManager.generateHelixPositions([0, 0, 0])
+    );
+  }
+
+  moveCardsToSpherePositions() {
+    this.updateCardPositions(
+      this.positionManager.generateSpherePositions([0, 0, 0])
     );
   }
 

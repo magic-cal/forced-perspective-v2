@@ -12,7 +12,7 @@ import {
 import PlayingCardManager from "./objects/PlayingCardManager";
 import TWEEN from "@tweenjs/tween.js";
 import CardRaycaster from "./objects/CardSelector";
-import { playingCards1 } from "./types/cards";
+import { playingCards52 } from "./types/cards";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -45,7 +45,7 @@ class ForcedPerspective {
     this.renderer = this.createRenderer();
     this.controls = this.setupControls();
     this.setupLights();
-    this.addObjects();
+    // this.addObjects();
     this.setupDebug(options.debug);
     this.setupVr();
     this.addResizer();
@@ -154,10 +154,13 @@ class ForcedPerspective {
 
   addPlayingCardsManager() {
     const playingCardManager = new PlayingCardManager(this.scene);
-    playingCardManager.createStack(playingCards1());
-    // setTimeout(() => {
-    //   playingCardManager.moveCardsToSpiralPositions();
-    // }, 5000);
+    playingCardManager.createStack(playingCards52);
+    playingCardManager.moveCardsToSpherePositions();
+
+    setTimeout(() => {
+      // playingCardManager.moveCardsToGridPositions2d(13, 4);
+      // playingCardManager.moveCardsToSpiralPositions();
+    }, 5000);
 
     return playingCardManager;
   }
@@ -179,9 +182,13 @@ class ForcedPerspective {
   setupLights() {
     this.scene.add(new THREE.HemisphereLight(0x606060, 0x404040));
 
-    const light = new THREE.DirectionalLight(0xffffff);
-    light.position.set(1, 1, 1).normalize();
-    this.scene.add(light);
+    const frontFacingLight = new THREE.DirectionalLight(0xffffff);
+    frontFacingLight.position.set(1, 1, 1).normalize();
+    this.scene.add(frontFacingLight);
+
+    const backFacingLight = new THREE.DirectionalLight(0xffffff);
+    backFacingLight.position.set(-1, -1, -1).normalize();
+    this.scene.add(backFacingLight);
   }
 
   setupControls() {
