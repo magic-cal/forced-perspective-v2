@@ -57,7 +57,7 @@ export const aceOfSpades = { suit: Suit.Spades, pip: Pip.Ace };
 export const kingOfHearts = { suit: Suit.Hearts, pip: Pip.King };
 
 export const playingCards1 = (card: Card = aceOfSpades) => {
-  return [aceOfSpades];
+  return [card];
 };
 
 export const suitToLetter = (suit: Suit) => {

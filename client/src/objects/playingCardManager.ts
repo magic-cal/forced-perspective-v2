@@ -1,15 +1,15 @@
+import { Object3D } from "three";
 import {
-  Pip,
-  Suit,
-  playingCards52,
   CARD_DIMENSIONS,
   CARD_PADDING,
   Card,
+  Pip,
+  Suit,
+  playingCards52,
 } from "../types/cards";
 import { Coord3D } from "../types/world";
+import PlayingCard from "./PlayingCard";
 import { PositionGenerator } from "./PositionGenerator";
-import { Object3D } from "three";
-import PlayingCard from "./playingCard";
 
 export default class PlayingCardManager {
   private scene: THREE.Scene;

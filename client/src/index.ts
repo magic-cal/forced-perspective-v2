@@ -90,7 +90,7 @@ class ForcedPerspective {
   }
 
   addControllerSynchronization() {
-    this.mouseDownUpdateService.addEventListener((data) => {});
+    this.mouseDownUpdateService.addEventListener(() => {});
     window.addEventListener("click", (e: MouseEvent) => {
       this.mouseDownUpdateService.emit({
         x: e.clientX,
