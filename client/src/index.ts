@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import Resizer from "./world-utils/resizer";
+import Resizer from "./utils/resizer";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
 import { SocketEventService } from "./sockets/SocketEventService";
 import { throttle } from "lodash-es";
@@ -13,6 +13,7 @@ import PlayingCardManager from "./objects/PlayingCardManager";
 import TWEEN from "@tweenjs/tween.js";
 import CardRaycaster from "./objects/CardSelector";
 import { playingCards52 } from "./types/cards";
+import { scheduleAction } from "./utils/timingUtils";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -158,7 +159,10 @@ class ForcedPerspective {
     playingCardManager.moveCardsToSpherePositions();
 
     setTimeout(() => {
-      // playingCardManager.moveCardsToGridPositions2d(13, 4);
+      playingCardManager.moveCardsToGridPositions2d(13, 4);
+
+      playingCardManager.moveCardsToGridPositions2d(13, 4);
+
       // playingCardManager.moveCardsToSpiralPositions();
     }, 5000);
 
@@ -225,11 +229,32 @@ class ForcedPerspective {
     return camera;
   }
 
-  start() {
+  async start() {
     this.renderer.setAnimationLoop(() => {
       this.renderer.render(this.scene, this.camera);
       TWEEN.update();
     });
+
+    // @TODO: Remove me. This is just for testing
+    await scheduleAction(() => {
+      this.playingCardManager.moveCardsToGridPositions2d(13, 4);
+    }, 5000);
+    await scheduleAction(() => {
+      this.playingCardManager.moveCardsToRandomPositions();
+      const rotation = { y: 0 };
+      new TWEEN.Tween(rotation)
+        .to({ y: Math.PI }, 5000)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        .onUpdate(() => {
+          this.camera.position.x = 20 * Math.sin(rotation.y);
+          this.camera.position.z = 20 * Math.cos(rotation.y);
+          this.camera.lookAt(0, 0, 0);
+        })
+        .start();
+    }, 5000);
+    await scheduleAction(() => {
+      this.playingCardManager.moveCardsToGridPositions2d(13, 4);
+    }, 5000);
   }
 }
 

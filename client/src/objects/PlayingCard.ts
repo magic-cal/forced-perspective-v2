@@ -54,6 +54,10 @@ export default class PlayingCard {
     }
   }
 
+  getCardValue(): Card {
+    return { suit: this.suit, pip: this.pip };
+  }
+
   updateCardValue(card: Card) {
     this.suit = card.suit;
     this.pip = card.pip;

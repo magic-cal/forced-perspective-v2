@@ -5,11 +5,14 @@ import {
   Card,
   Pip,
   Suit,
+  aceOfSpades,
+  fourOfSpades,
   playingCards52,
 } from "../types/cards";
 import { Coord3D } from "../types/world";
 import PlayingCard from "./PlayingCard";
 import { PositionGenerator } from "./PositionGenerator";
+import { isEqual } from "lodash-es";
 
 export default class PlayingCardManager {
   private scene: THREE.Scene;
@@ -89,12 +92,24 @@ export default class PlayingCardManager {
   }
 
   selectCard(object: Object3D<THREE.Event>) {
-    const card = this.playingCards.find(
+    const selectedCard = this.playingCards.find(
       (card) => card.getCardMesh().uuid === object.uuid
     );
-    if (card) {
-      card.select();
+    if (!selectedCard) {
+      return;
     }
+    const newValue = fourOfSpades;
+    const oldValue = selectedCard.getCardValue();
+
+    const cardToSwitchWith = this.playingCards.find((card) =>
+      isEqual(card.getCardValue(), newValue)
+    );
+    if (!cardToSwitchWith) {
+      throw new Error("No card to switch with");
+    }
+
+    selectedCard.updateCardValue(newValue);
+    cardToSwitchWith.updateCardValue(oldValue);
   }
 
   // updateSwarmBehavior(): void {

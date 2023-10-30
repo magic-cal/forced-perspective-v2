@@ -55,6 +55,7 @@ export const oneWayDeck52 = (card: Card) => {
 
 export const aceOfSpades = { suit: Suit.Spades, pip: Pip.Ace };
 export const kingOfHearts = { suit: Suit.Hearts, pip: Pip.King };
+export const fourOfSpades = { suit: Suit.Spades, pip: Pip.Four };
 
 export const playingCards1 = (card: Card = aceOfSpades) => {
   return [card];
