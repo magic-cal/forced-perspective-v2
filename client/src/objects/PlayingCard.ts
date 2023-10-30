@@ -14,9 +14,12 @@ import { Tween, Easing } from "@tweenjs/tween.js";
 
 const txtLoader = new THREE.TextureLoader();
 const colorLight = new THREE.Color(0xffffff);
-let faceDownTexture = txtLoader.load(
-  "src/assets/playingCardBacks/RED_BACK.svg"
-);
+const backImageUrl = new URL(
+  "/src/assets/playingCardBacks/RED_BACK.svg",
+  import.meta.url
+).href;
+
+let faceDownTexture = txtLoader.load(backImageUrl);
 let darkMaterial = new THREE.MeshPhongMaterial({
   transparent: true,
   opacity: 0,
@@ -61,9 +64,12 @@ export default class PlayingCard {
   }
 
   private createFaceUpTexture() {
-    let faceUpTexture = txtLoader.load(
-      `src/assets/playingCardFaces/${suitToLetter(this.suit)}-${this.pip}.svg`
-    );
+    const imageUrl = new URL(
+      `/src/assets/playingCardFaces/${suitToLetter(this.suit)}-${this.pip}.svg`,
+      import.meta.url
+    ).href;
+
+    let faceUpTexture = txtLoader.load(imageUrl);
 
     let faceUpMaterial = new THREE.MeshPhongMaterial({
       color: colorLight,
