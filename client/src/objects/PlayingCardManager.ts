@@ -5,7 +5,6 @@ import {
   Card,
   Pip,
   Suit,
-  aceOfSpades,
   fourOfSpades,
   playingCards52,
 } from "../types/cards";
