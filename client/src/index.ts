@@ -234,7 +234,7 @@ class ForcedPerspective {
 }
 
 const forcedPerspective = new ForcedPerspective(
-  { debug: true },
+  { debug: import.meta.env.MODE === "development" },
   new SocketEventService()
 );
 forcedPerspective.start();
