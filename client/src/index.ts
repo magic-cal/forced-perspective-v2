@@ -1,21 +1,19 @@
+import TWEEN from "@tweenjs/tween.js";
+import { throttle } from "lodash-es";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import Resizer from "./utils/resizer";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
-import { SocketEventService } from "./sockets/SocketEventService";
-import { throttle } from "lodash-es";
-import { TypedSocketEventService } from "./sockets/TypedSocketEventService";
 import {
   CameraChangedEventData,
   MouseDownEventData,
 } from "../../shared/SocketEvents";
-import PlayingCardManager from "./objects/PlayingCardManager";
-import TWEEN from "@tweenjs/tween.js";
 import CardRaycaster from "./objects/CardSelector";
-import { playingCards52 } from "./types/cards";
-import { scheduleAction } from "./utils/timingUtils";
-import Initialisation from "./sections/Initialisation";
+import PlayingCardManager from "./objects/PlayingCardManager";
 import ThreeCardMonte from "./sections/ThreeCardMonte";
+import { SocketEventService } from "./sockets/SocketEventService";
+import { TypedSocketEventService } from "./sockets/TypedSocketEventService";
+import Resizer from "./utils/resizer";
+import Initialisation from "./sections/Initialisation";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -225,13 +223,12 @@ class ForcedPerspective {
       TWEEN.update();
     });
 
-    // TODO: Refactor this into a section manager
     const initialisation = new Initialisation(
       this.scene,
       this.camera,
       this.playingCardManager
     );
-    // await initialisation.next();
+    await initialisation.next();
 
     const threeCardMonte = new ThreeCardMonte(
       this.scene,
@@ -239,6 +236,8 @@ class ForcedPerspective {
       this.playingCardManager
     );
     await threeCardMonte.next();
+
+    // TODO: Refactor this into a section manager
   }
 }
 

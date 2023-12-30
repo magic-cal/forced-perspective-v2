@@ -12,6 +12,7 @@ import { Coord3D } from "../types/world";
 import PlayingCard from "./PlayingCard";
 import { PositionGenerator } from "./PositionGenerator";
 import { isEqual } from "lodash-es";
+import * as THREE from "three";
 
 export default class PlayingCardManager {
   private scene: THREE.Scene;
@@ -48,7 +49,15 @@ export default class PlayingCardManager {
     await Promise.all(
       this.playingCards.map(async (playingCard) => {
         await playingCard.fadeOut();
-        this.scene.remove(playingCard.getCardMesh());
+        const mesh = playingCard.getCardMesh();
+        const materials = mesh.material;
+        if (Array.isArray(materials)) {
+          materials.forEach((material) => material.dispose());
+        } else {
+          materials.dispose();
+        }
+        mesh.geometry.dispose();
+        this.scene.remove(mesh);
       })
     );
     console.log("deleted stack", this.playingCards);
@@ -74,8 +83,8 @@ export default class PlayingCardManager {
     );
   }
 
-  moveCardsToGridPositions2d(columns: number, rows: number) {
-    this.updateCardPositions(
+  async moveCardsToGridPositions2d(columns: number, rows: number) {
+    await this.updateCardPositions(
       this.positionManager.generateGridPositions2d([0, 0, 0], columns, rows, [
         CARD_PADDING[0],
         CARD_PADDING[1],
@@ -95,7 +104,10 @@ export default class PlayingCardManager {
     );
   }
 
-  async updateCardPositions(positions: Coord3D[],durationMs?: number): Promise<void> {
+  async updateCardPositions(
+    positions: Coord3D[],
+    durationMs?: number
+  ): Promise<void> {
     const promises = [];
     for (let i = 0; i < this.playingCards.length; i++) {
       promises.push(
@@ -132,12 +144,12 @@ export default class PlayingCardManager {
     }
   }
 
-  flipCard(card: Card) {
+  async flipCard(card: Card) {
     const playingCard = this.findCard(card);
     if (!playingCard) {
       return;
     }
-    playingCard.flipCard();
+    await playingCard.flipCard();
   }
 
   findCard(value: Card) {

@@ -14,11 +14,7 @@ export default class ThreeCardMonte extends Section {
   }
 
   currentStep = 0;
-  steps = [
-    this.setup,
-    // this.createMonteCards,
-    // this.moveCardsThreeGrid,
-  ];
+  steps = [this.setup];
 
   public async next(): Promise<boolean> {
     await this.steps[this.currentStep].bind(this)();
@@ -30,52 +26,73 @@ export default class ThreeCardMonte extends Section {
   }
 
   public async setup() {
-    // await this.cardManager.deleteStack();
+    await this.cardManager.deleteStack();
     await this.createMonteCards();
-    // await this.moveCardsThreeGrid();
-    // await this.flipCards();
+    scheduleAction(async () => {
+      await this.moveCardsThreeGrid();
+    }, 1000);
+    await scheduleAction(async () => {
+      await this.flipCards();
+    }, 1000);
     await this.shuffleCards();
+    await this.flipCards(500);
+    await scheduleAction(async () => {
+      await this.flipCards(500);
+    }, 5000);
+    await this.shuffleCards(500);
   }
 
   public async createMonteCards(): Promise<void> {
     this.cardManager.createStack(threeCardMonte());
   }
 
-  public moveCardsThreeGrid(): void {
-    this.cardManager.moveCardsToGridPositions2d(3, 1);
+  public async moveCardsThreeGrid(): Promise<void> {
+    await this.cardManager.moveCardsToGridPositions2d(3, 1);
   }
 
   public async flipCards(delayMs = 1000): Promise<void> {
     const cards = threeCardMonte();
     await Promise.all(
       cards.map(async (card, index) => {
-        await scheduleAction(() => {
-          this.cardManager.flipCard(card);
+        await scheduleAction(async () => {
+          await this.cardManager.flipCard(card);
         }, index * delayMs);
       })
     );
   }
 
-  shuffleCards = async (shuffleRounds = 5, durationMs = 200) => {
-    const positionGenerator = new PositionGenerator(3, CARD_DIMENSIONS);
-    const positions = positionGenerator.generateGridPositions2d(
-      [0, 0, 0],
-      3,
-      1,
-      [CARD_PADDING[0], CARD_PADDING[1]]
-    );
-    let shufflesPerformed = 0;
-    const previousPositions = positions;
+  async shuffleCards(durationMs = 1000) {
+    const shufflePositions = this.generateThreeCardMonteShufflePositions();
 
-    while (shufflesPerformed < shuffleRounds) {
-      const shuffledPositions = positions.sort(() => Math.random() - 0.5);
-      if (previousPositions !== shuffledPositions) {
-        shufflesPerformed++;
-        await this.cardManager.updateCardPositions(
-          shuffledPositions,
-          durationMs
-        );
-      }
-    }
+    await Promise.all(
+      shufflePositions.map(async (positions, index) => {
+        await scheduleAction(async () => {
+          await this.cardManager.updateCardPositions(positions, durationMs);
+        }, index * durationMs);
+      })
+    );
+  }
+
+  generateThreeCardMonteShufflePositions = () => {
+    const positionGenerator = new PositionGenerator(3, CARD_DIMENSIONS);
+    const pos = positionGenerator.generateGridPositions2d([0, 0, 0], 3, 1, [
+      CARD_PADDING[0] * 3,
+      CARD_PADDING[1] * 3,
+    ]);
+
+    return [
+      [pos[0], pos[1], pos[2]],
+      [pos[0], pos[1], pos[2]],
+      [pos[0], pos[2], pos[1]],
+      [pos[0], pos[1], pos[2]],
+      [pos[0], pos[2], pos[1]],
+      [pos[2], pos[1], pos[0]],
+      [pos[2], pos[0], pos[1]],
+      [pos[1], pos[0], pos[2]],
+      [pos[1], pos[2], pos[0]],
+      [pos[1], pos[0], pos[2]],
+      [pos[2], pos[0], pos[1]],
+      [pos[2], pos[1], pos[0]],
+    ];
   };
 }

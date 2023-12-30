@@ -24,24 +24,24 @@ export default class Initialisation extends Section {
 
   public async step1(): Promise<void> {
     this.createDeck();
+    await scheduleAction(async () => {
+      await this.cardManager.moveCardsToGridPositions2d(13, 4);
+    }, 5000);
+    await scheduleAction(() => {
+      this.cardManager.moveCardsToRandomPositions();
+      const rotation = { y: 0 };
+      new TWEEN.Tween(rotation)
+        .to({ y: Math.PI }, 5000)
+        .easing(TWEEN.Easing.Quadratic.Out)
+        // .onUpdate(() => {
+        //   this.camera.position.x = 20 * Math.sin(rotation.y);
+        //   this.camera.position.z = 20 * Math.cos(rotation.y);
+        //   this.camera.lookAt(0, 0, 0);
+        // })
+        .start();
+    }, 5000);
     await scheduleAction(() => {
       this.cardManager.moveCardsToGridPositions2d(13, 4);
     }, 5000);
-    // await scheduleAction(() => {
-    //   this.cardManager.moveCardsToRandomPositions();
-    //   const rotation = { y: 0 };
-    //   new TWEEN.Tween(rotation)
-    //     .to({ y: Math.PI }, 5000)
-    //     .easing(TWEEN.Easing.Quadratic.Out)
-    //     .onUpdate(() => {
-    //       this.camera.position.x = 20 * Math.sin(rotation.y);
-    //       this.camera.position.z = 20 * Math.cos(rotation.y);
-    //       this.camera.lookAt(0, 0, 0);
-    //     })
-    //     .start();
-    // }, 5000);
-    // await scheduleAction(() => {
-    //   this.cardManager.moveCardsToGridPositions2d(13, 4);
-    // }, 5000);
   }
 }

@@ -24,12 +24,7 @@ let darkMaterial = new THREE.MeshPhongMaterial({
   transparent: true,
   opacity: 0,
 });
-let faceDownMaterial = new THREE.MeshPhongMaterial({
-  transparent: true,
-  map: faceDownTexture,
-  shininess: 40,
-  depthTest: false,
-});
+
 const defaultAnimationDurationMs = 2 * 1000;
 
 export default class PlayingCard {
@@ -43,6 +38,10 @@ export default class PlayingCard {
     this.suit = suit;
     this.pip = pip;
     this.cardMesh = this.createCardMesh();
+    console.log(
+      "opacity:",
+      (this.cardMesh.material as any).map((x: any) => x.opacity)
+    );
   }
 
   select() {
@@ -63,11 +62,11 @@ export default class PlayingCard {
     this.pip = card.pip;
 
     if (Array.isArray(this.cardMesh.material)) {
-      this.cardMesh.material[4] = this.createFaceUpTexture();
+      this.cardMesh.material[4] = this.createFaceUpMaterial();
     }
   }
 
-  private createFaceUpTexture() {
+  private createFaceUpMaterial() {
     const imageUrl = new URL(
       `/src/assets/playingCardFaces/${suitToLetter(this.suit)}-${this.pip}.svg`,
       import.meta.url
@@ -85,8 +84,20 @@ export default class PlayingCard {
     return faceUpMaterial;
   }
 
+  createFaceDownMaterial() {
+    let faceDownMaterial = new THREE.MeshPhongMaterial({
+      transparent: true,
+      map: faceDownTexture,
+      shininess: 40,
+      depthTest: false,
+      opacity: 1,
+    });
+    return faceDownMaterial;
+  }
+
   private createCardMesh() {
-    const faceUpMaterial = this.createFaceUpTexture();
+    const faceUpMaterial = this.createFaceUpMaterial();
+    const faceDownMaterial = this.createFaceDownMaterial();
 
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...CARD_DIMENSIONS), [
       darkMaterial,
@@ -141,7 +152,7 @@ export default class PlayingCard {
   public async flipCard(durationMs = defaultAnimationDurationMs) {
     await new Promise<void>((resolve) => {
       new Tween(this.cardMesh.rotation)
-        .to({ y: "-" + Math.PI }, 1000) // relative animation 180 deg
+        .to({ y: "-" + Math.PI }, durationMs)
         .onComplete(() => {
           resolve();
         })
