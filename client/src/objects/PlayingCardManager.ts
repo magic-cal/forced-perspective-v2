@@ -15,7 +15,7 @@ import { isEqual } from "lodash-es";
 
 export default class PlayingCardManager {
   private scene: THREE.Scene;
-  private playingCards: PlayingCard[]; // Specify the type
+  private playingCards: PlayingCard[];
   private positionManager: PositionGenerator;
 
   constructor(scene: THREE.Scene) {
@@ -42,6 +42,17 @@ export default class PlayingCardManager {
     }
     this.positionManager.setNumberOfObjects(this.playingCards.length);
     this.moveCardsToStackedPositions();
+  }
+
+  async deleteStack() {
+    await Promise.all(
+      this.playingCards.map(async (playingCard) => {
+        await playingCard.fadeOut();
+        this.scene.remove(playingCard.getCardMesh());
+      })
+    );
+    console.log("deleted stack", this.playingCards);
+    this.playingCards = [];
   }
 
   createPlayingCard(position: Coord3D, suit: Suit, pip: Pip): PlayingCard {
@@ -84,10 +95,14 @@ export default class PlayingCardManager {
     );
   }
 
-  updateCardPositions(positions: Coord3D[]) {
+  async updateCardPositions(positions: Coord3D[],durationMs?: number): Promise<void> {
+    const promises = [];
     for (let i = 0; i < this.playingCards.length; i++) {
-      this.playingCards[i].moveCardToSmoothly(positions[i]);
+      promises.push(
+        this.playingCards[i].moveCardToSmoothly(positions[i], durationMs)
+      );
     }
+    await Promise.all(promises);
   }
 
   selectCard(object: Object3D<THREE.Event>) {
@@ -109,6 +124,26 @@ export default class PlayingCardManager {
 
     selectedCard.updateCardValue(newValue);
     cardToSwitchWith.updateCardValue(oldValue);
+  }
+
+  flipCards() {
+    for (const playingCard of this.playingCards) {
+      playingCard.flipCard();
+    }
+  }
+
+  flipCard(card: Card) {
+    const playingCard = this.findCard(card);
+    if (!playingCard) {
+      return;
+    }
+    playingCard.flipCard();
+  }
+
+  findCard(value: Card) {
+    return this.playingCards.find((card) =>
+      isEqual(card.getCardValue(), value)
+    );
   }
 
   // updateSwarmBehavior(): void {

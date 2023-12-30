@@ -53,8 +53,12 @@ export const oneWayDeck52 = (card: Card) => {
   return Array.from({ length: 52 }, () => card);
 };
 
+export const threeCardMonte = () => [aceOfSpades, aceOfClubs, queenOfHearts];
+
 export const aceOfSpades = { suit: Suit.Spades, pip: Pip.Ace };
+export const aceOfClubs = { suit: Suit.Clubs, pip: Pip.Ace };
 export const kingOfHearts = { suit: Suit.Hearts, pip: Pip.King };
+export const queenOfHearts = { suit: Suit.Hearts, pip: Pip.Queen };
 export const fourOfSpades = { suit: Suit.Spades, pip: Pip.Four };
 
 export const playingCards1 = (card: Card = aceOfSpades) => {

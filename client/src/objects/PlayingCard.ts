@@ -125,25 +125,55 @@ export default class PlayingCard {
   public moveCardToSmoothly(
     newPosition: Coord3D,
     durationMs = defaultAnimationDurationMs
-  ): void {
-    const endPosition = new THREE.Vector3(...newPosition);
-
-    const tween = new Tween(this.cardMesh.position)
-      .to(endPosition, durationMs)
-      .easing(Easing.Quadratic.Out);
-    tween.start();
+  ) {
+    return new Promise<void>((resolve) => {
+      const endPosition = new THREE.Vector3(...newPosition);
+      new Tween(this.cardMesh.position)
+        .to(endPosition, durationMs)
+        .easing(Easing.Quadratic.Out)
+        .onComplete(() => {
+          resolve();
+        })
+        .start();
+    });
   }
 
-  public rotateCardToSmoothly(
-    newRotation: Coord3D,
-    durationMs = defaultAnimationDurationMs
-  ): void {
-    const endRotation = new THREE.Euler(...newRotation);
+  public async flipCard(durationMs = defaultAnimationDurationMs) {
+    await new Promise<void>((resolve) => {
+      new Tween(this.cardMesh.rotation)
+        .to({ y: "-" + Math.PI }, 1000) // relative animation 180 deg
+        .onComplete(() => {
+          resolve();
+        })
+        .start();
+    });
+  }
 
-    const tween = new Tween(this.cardMesh.rotation)
-      .to(endRotation, durationMs)
-
-      .easing(Easing.Quadratic.Out);
-    tween.start();
+  public async fadeOut() {
+    if (Array.isArray(this.cardMesh.material)) {
+      await Promise.all(
+        this.cardMesh.material?.map((x) => {
+          return new Promise<void>((resolve) => {
+            const tween = new Tween(x)
+              .to({ opacity: 0 }, 1000)
+              .easing(Easing.Quadratic.Out)
+              .onComplete(() => {
+                resolve();
+              });
+            tween.start();
+          });
+        })
+      );
+    } else {
+      return new Promise<void>((resolve) => {
+        const tween = new Tween(this.cardMesh.material)
+          .to({ opacity: 0 }, 1000)
+          .easing(Easing.Quadratic.Out)
+          .onComplete(() => {
+            resolve();
+          });
+        tween.start();
+      });
+    }
   }
 }

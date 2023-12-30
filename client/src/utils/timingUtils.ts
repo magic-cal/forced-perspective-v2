@@ -1,10 +1,10 @@
 export function scheduleAction(
-  action: () => void,
+  action: () => void | Promise<void>,
   delayMs: number
 ): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(() => {
-      action();
+    setTimeout(async () => {
+      await action();
       resolve();
     }, delayMs);
   });

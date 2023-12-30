@@ -14,6 +14,8 @@ import TWEEN from "@tweenjs/tween.js";
 import CardRaycaster from "./objects/CardSelector";
 import { playingCards52 } from "./types/cards";
 import { scheduleAction } from "./utils/timingUtils";
+import Initialisation from "./sections/Initialisation";
+import ThreeCardMonte from "./sections/ThreeCardMonte";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -154,19 +156,7 @@ class ForcedPerspective {
   }
 
   addPlayingCardsManager() {
-    const playingCardManager = new PlayingCardManager(this.scene);
-    playingCardManager.createStack(playingCards52);
-    playingCardManager.moveCardsToSpherePositions();
-
-    setTimeout(() => {
-      playingCardManager.moveCardsToGridPositions2d(13, 4);
-
-      playingCardManager.moveCardsToGridPositions2d(13, 4);
-
-      // playingCardManager.moveCardsToSpiralPositions();
-    }, 5000);
-
-    return playingCardManager;
+    return new PlayingCardManager(this.scene);
   }
 
   addCube() {
@@ -235,31 +225,25 @@ class ForcedPerspective {
       TWEEN.update();
     });
 
-    // @TODO: Remove me. This is just for testing
-    await scheduleAction(() => {
-      this.playingCardManager.moveCardsToGridPositions2d(13, 4);
-    }, 5000);
-    await scheduleAction(() => {
-      this.playingCardManager.moveCardsToRandomPositions();
-      const rotation = { y: 0 };
-      new TWEEN.Tween(rotation)
-        .to({ y: Math.PI }, 5000)
-        .easing(TWEEN.Easing.Quadratic.Out)
-        .onUpdate(() => {
-          this.camera.position.x = 20 * Math.sin(rotation.y);
-          this.camera.position.z = 20 * Math.cos(rotation.y);
-          this.camera.lookAt(0, 0, 0);
-        })
-        .start();
-    }, 5000);
-    await scheduleAction(() => {
-      this.playingCardManager.moveCardsToGridPositions2d(13, 4);
-    }, 5000);
+    // TODO: Refactor this into a section manager
+    const initialisation = new Initialisation(
+      this.scene,
+      this.camera,
+      this.playingCardManager
+    );
+    // await initialisation.next();
+
+    const threeCardMonte = new ThreeCardMonte(
+      this.scene,
+      this.camera,
+      this.playingCardManager
+    );
+    await threeCardMonte.next();
   }
 }
 
 const forcedPerspective = new ForcedPerspective(
-  { debug: import.meta.env.MODE === "development" },
+  { debug: false && import.meta.env.MODE === "development" },
   new SocketEventService()
 );
 forcedPerspective.start();
