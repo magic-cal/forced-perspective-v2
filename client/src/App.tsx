@@ -1,27 +1,34 @@
-import { Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
-import { Scene } from "@/components/canvas/Scene";
+import { Canvas } from "@/components/canvas/Canvas";
 import { Interface } from "@/components/dom/Interface";
 
 export default function App() {
   return (
-    <>
+    <main className="app-container">
       {/* R3F Canvas - 3D Content */}
-      <Canvas
-        camera={{
-          fov: 45,
-          near: 0.1,
-          far: 200,
-          position: [0, 2, 6],
-        }}
-      >
-        <Suspense fallback={null}>
-          <Scene />
-        </Suspense>
-      </Canvas>
+      <Canvas className="canvas" />
 
       {/* DOM Content - UI Overlay */}
       <Interface />
-    </>
+
+      <style>{`
+        .app-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          overflow: hidden;
+        }
+
+        .canvas {
+          position: fixed !important;
+          top: 0;
+          left: 0;
+          width: 100% !important;
+          height: 100% !important;
+          background: transparent;
+        }
+      `}</style>
+    </main>
   );
 }
