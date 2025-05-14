@@ -1,6 +1,7 @@
 import { OrbitControls, Environment } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
+import { Deck } from "./Deck";
 
 export function Scene() {
   const { camera } = useThree();
@@ -20,14 +21,8 @@ export function Scene() {
       <Environment preset="city" />
       <OrbitControls makeDefault />
 
-      {/* Scene Content - Will be populated with cards and other 3D elements */}
-      <group>
-        {/* Temporary mesh to visualize the scene */}
-        <mesh position={[0, 0, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="orange" />
-        </mesh>
-      </group>
+      {/* Scene Content */}
+      <Deck position={[0, 0, 0]} rotation={[0, 0, 0]} />
     </>
   );
 }
