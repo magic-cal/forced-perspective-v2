@@ -1,9 +1,42 @@
-import { useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
+import { useRef, useState, useMemo, useEffect } from "react";
 import * as THREE from "three";
-import { CardSuit, CardValue } from "./types";
 import { animated, useSpring } from "@react-spring/three";
+import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
+import { textureManager } from "../../../utils/TextureManager";
+
+// Create rounded rectangle shape for the card
+const createRoundedRectShape = (
+  width: number,
+  height: number,
+  radius: number
+) => {
+  const shape = new THREE.Shape();
+  shape.moveTo(-width / 2, -height / 2 + radius);
+  shape.lineTo(-width / 2, height / 2 - radius);
+  shape.quadraticCurveTo(
+    -width / 2,
+    height / 2,
+    -width / 2 + radius,
+    height / 2
+  );
+  shape.lineTo(width / 2 - radius, height / 2);
+  shape.quadraticCurveTo(width / 2, height / 2, width / 2, height / 2 - radius);
+  shape.lineTo(width / 2, -height / 2 + radius);
+  shape.quadraticCurveTo(
+    width / 2,
+    -height / 2,
+    width / 2 - radius,
+    -height / 2
+  );
+  shape.lineTo(-width / 2 + radius, -height / 2);
+  shape.quadraticCurveTo(
+    -width / 2,
+    -height / 2,
+    -width / 2,
+    -height / 2 + radius
+  );
+  return shape;
+};
 
 export interface CardProps {
   position?: [number, number, number];
@@ -30,6 +63,36 @@ export function Card({
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const [frontTexture, setFrontTexture] = useState<THREE.Texture | null>(null);
+  const [backTexture, setBackTexture] = useState<THREE.Texture | null>(null);
+
+  // Load textures using TextureManager
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTextures = async () => {
+      try {
+        const [front, back] = await Promise.all([
+          textureManager.loadCardTexture(suit, value),
+          textureManager.loadCardBack("RED"),
+        ]);
+
+        if (isMounted) {
+          setFrontTexture(front);
+          setBackTexture(back);
+        }
+      } catch (error) {
+        console.error("Error loading card textures:", error);
+      }
+    };
+
+    loadTextures();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [suit, value]);
 
   // Animation springs
   const { hoverScale, rotationY } = useSpring({
@@ -38,14 +101,19 @@ export function Card({
     config: { mass: 1, tension: 170, friction: 26 },
   });
 
-  // Selection animation
-  useFrame((state) => {
-    if (!group.current || !isSelected) return;
-
-    // Gentle floating animation for selected cards
-    const t = state.clock.getElapsedTime();
-    group.current.position.y = position[1] + Math.sin(t * 2) * 0.1;
-  });
+  // Create geometry once
+  const geometry = useMemo(() => {
+    const shape = createRoundedRectShape(
+      CARD_DIMENSIONS.width,
+      CARD_DIMENSIONS.height,
+      0.1
+    );
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: CARD_DIMENSIONS.thickness,
+      bevelEnabled: false,
+    });
+    return geometry;
+  }, []);
 
   const handlePointerOver = () => {
     if (!isInteractive) return;
@@ -64,6 +132,16 @@ export function Card({
     onClick?.();
   };
 
+  // Material properties
+  const materialProps = useMemo(
+    () => ({
+      metalness: 0.1,
+      roughness: 0.6,
+      envMapIntensity: 1.5,
+    }),
+    []
+  );
+
   return (
     <animated.group
       ref={group}
@@ -75,12 +153,18 @@ export function Card({
       scale={hoverScale}
     >
       {/* Front face */}
-      <animated.mesh castShadow receiveShadow rotation-y={rotationY}>
-        <boxGeometry args={[2.5, 3.5, 0.05]} />
+      <animated.mesh
+        castShadow
+        receiveShadow
+        rotation-y={rotationY}
+        geometry={geometry}
+      >
         <meshStandardMaterial
+          {...materialProps}
           color={isSelected ? "#ffeb3b" : "#ffffff"}
-          metalness={0.2}
-          roughness={0.5}
+          map={frontTexture}
+          side={THREE.FrontSide}
+          transparent
         />
       </animated.mesh>
 
@@ -89,12 +173,16 @@ export function Card({
         castShadow
         receiveShadow
         rotation-y={rotationY.to((r) => r + Math.PI)}
+        geometry={geometry}
       >
-        <boxGeometry args={[2.5, 3.5, 0.05]} />
-        <meshStandardMaterial color="#2196f3" metalness={0.2} roughness={0.5} />
+        <meshStandardMaterial
+          {...materialProps}
+          color="#ffffff"
+          map={backTexture}
+          side={THREE.BackSide}
+          transparent
+        />
       </animated.mesh>
-
-      {/* Card value and suit will be added here later */}
     </animated.group>
   );
 }

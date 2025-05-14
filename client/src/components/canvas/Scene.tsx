@@ -1,30 +1,60 @@
 import { OrbitControls, Preload } from "@react-three/drei";
-import { useThree, useFrame } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
+import { useThree } from "@react-three/fiber";
+import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { Deck } from "./Deck";
 import { Environment } from "./Environment";
+import { Card } from "./Card";
+import { CardSuit, CardValue } from "./Card/types";
 
 export function Scene() {
   const { camera, gl } = useThree();
-  const groupRef = useRef<THREE.Group>(null);
+  const [selectedCard, setSelectedCard] = useState<number | null>(null);
 
   useEffect(() => {
     // Initial camera setup
     camera.lookAt(0, 0, 0);
+    camera.position.set(0, 5, 10);
 
     // Enable shadow mapping
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
 
-  // Subtle rotation animation for the entire scene
-  useFrame((state) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y =
-        Math.sin(state.clock.elapsedTime * 0.1) * 0.05;
-    }
-  });
+  // Demo cards setup
+  const demoCards = [
+    // Center card - face up
+    {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0] as [number, number, number],
+      suit: "hearts" as CardSuit,
+      value: "A" as CardValue,
+      isFlipped: false,
+    },
+    // Left card - face down
+    {
+      position: [-3, 0, 0] as [number, number, number],
+      rotation: [0, 0.2, 0] as [number, number, number],
+      suit: "spades" as CardSuit,
+      value: "K" as CardValue,
+      isFlipped: true,
+    },
+    // Right card - face up, tilted
+    {
+      position: [3, 0, 0] as [number, number, number],
+      rotation: [0.2, -0.2, 0] as [number, number, number],
+      suit: "diamonds" as CardSuit,
+      value: "Q" as CardValue,
+      isFlipped: false,
+    },
+    // Back card - face up, more tilted
+    {
+      position: [0, 0, -3] as [number, number, number],
+      rotation: [0.3, 0, 0] as [number, number, number],
+      suit: "clubs" as CardSuit,
+      value: "J" as CardValue,
+      isFlipped: false,
+    },
+  ];
 
   return (
     <>
@@ -39,14 +69,31 @@ export function Scene() {
         makeDefault
         minPolarAngle={0}
         maxPolarAngle={Math.PI / 2}
-        minDistance={2}
+        minDistance={5}
         maxDistance={20}
       />
 
-      {/* Scene Content */}
-      <group ref={groupRef}>
-        <Deck position={[0, 0, 0]} rotation={[0, 0, 0]} />
-      </group>
+      {/* Ground plane for better perspective */}
+      {/* <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
+        <planeGeometry args={[30, 30]} />
+        <meshStandardMaterial color="#f0f0f0" />
+      </mesh> */}
+
+      {/* Demo Cards */}
+      {demoCards.map((card, index) => (
+        <Card
+          key={index}
+          {...card}
+          isSelected={selectedCard === index}
+          isInteractive={true}
+          onClick={() => setSelectedCard(index === selectedCard ? null : index)}
+          onHover={(isHovering: boolean) => {
+            // Optional hover effect demonstrat
+            // ion
+            console.log(`Card ${index} hover: ${isHovering}`);
+          }}
+        />
+      ))}
     </>
   );
 }

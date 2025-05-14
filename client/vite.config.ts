@@ -4,17 +4,18 @@ import mkcert from "vite-plugin-mkcert";
 import path from "path";
 
 export default defineConfig({
-  base: "/forced-perspective-v2/",
+  base: "/",
   build: {
-    outDir: "../dist",
+    outDir: "dist",
     emptyOutDir: true,
   },
 
   plugins: [react(), mkcert()],
 
   server: {
-    port: 3000,
+    port: 5173,
     https: true,
+    host: true,
   },
 
   resolve: {
@@ -28,5 +29,9 @@ export default defineConfig({
       "@/types": path.resolve(__dirname, "./src/types"),
       "@/utils": path.resolve(__dirname, "./src/utils"),
     },
+  },
+
+  optimizeDeps: {
+    include: ["three", "@react-three/fiber", "@react-three/drei"],
   },
 });
