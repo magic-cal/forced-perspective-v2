@@ -11,17 +11,26 @@
   "devDependencies": {
     "@types/three": "^0.155.0",
     "@vitejs/plugin-basic-ssl": "^1.0.1",
+    "@vitejs/plugin-react": "^4.0.4",
     "typescript": "^5.1.6",
     "vite": "^4.4.9",
     "vite-plugin-mkcert": "^1.17.1"
   },
   "dependencies": {
+    "@react-three/drei": "^9.88.0",
+    "@react-three/fiber": "^8.15.0",
+    "@react-three/postprocessing": "^2.15.1",
     "@types/lodash-es": "^4.17.8",
+    "@types/react": "^18.2.21",
+    "@types/react-dom": "^18.2.7",
     "@types/socket.io-client": "^3.0.0",
     "lil-gui": "^0.18.2",
     "lodash": "^4.17.21",
     "lodash-es": "^4.17.21",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "socket.io-client": "^4.7.2",
-    "three": "^0.155.0"
+    "three": "^0.155.0",
+    "zustand": "^4.4.1"
   }
 }

@@ -1,3 +1,4 @@
+import { PerspectiveCamera, Scene } from "three";
 import PlayingCardManager from "../objects/PlayingCardManager";
 import { playingCards52 } from "../types/cards";
 import { scheduleAction } from "../utils/timingUtils";
@@ -6,8 +7,8 @@ import TWEEN from "@tweenjs/tween.js";
 
 export default class Initialisation extends Section {
   constructor(
-    scene: THREE.Scene,
-    camera: THREE.PerspectiveCamera,
+    scene: Scene,
+    camera: PerspectiveCamera,
     cardManager: PlayingCardManager
   ) {
     super(scene, camera, cardManager);
