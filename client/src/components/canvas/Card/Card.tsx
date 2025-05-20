@@ -82,6 +82,7 @@ export function Card({
       opacity: 0,
       depthWrite: true,
       depthTest: true,
+      side: THREE.DoubleSide,
     });
 
     const frontMaterial = new THREE.MeshPhongMaterial({

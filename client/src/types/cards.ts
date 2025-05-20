@@ -44,7 +44,7 @@ export const SUIT_TO_FILE_MAP: Record<CardSuit, string> = {
 export const CARD_DIMENSIONS = {
   width: 2.5,
   height: 3.5,
-  thickness: 0.05,
+  thickness: 0.012,
 } as const;
 
 // Card data interface

@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { Environment } from "./Environment";
 import { CardSuit, CardValue, CARD_SUITS, CARD_VALUES } from "./Card/types";
 import { Card } from "@/components/canvas/Card";
+import { CARD_DIMENSIONS } from "@/types/cards";
 
 export function Scene() {
   const { camera, gl } = useThree();
@@ -29,7 +30,11 @@ export function Scene() {
       for (const value of CARD_VALUES) {
         // Add slight random offset to make it look more natural
         cards.push({
-          position: [1, 0, index * 0.01] as [number, number, number],
+          position: [1, 0, index * CARD_DIMENSIONS.thickness] as [
+            number,
+            number,
+            number
+          ],
           rotation: [0, 0, 0] as [number, number, number],
           suit,
           value,
