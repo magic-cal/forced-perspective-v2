@@ -27,7 +27,7 @@ export interface CardData {
 export const CARD_DIMENSIONS = {
   width: 2.5,
   height: 3.5,
-  thickness: 0.05,
+  thickness: 0.01,
 } as const;
 
 export const CARD_SUITS: CardSuit[] = ["hearts", "diamonds", "clubs", "spades"];
