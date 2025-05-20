@@ -59,11 +59,9 @@ export function Card({
   // Configure textures
   useMemo(() => {
     if (frontTexture) {
-      frontTexture.flipY = false;
       frontTexture.needsUpdate = true;
     }
     if (backTexture) {
-      backTexture.flipY = false;
       backTexture.needsUpdate = true;
     }
   }, [frontTexture, backTexture]);

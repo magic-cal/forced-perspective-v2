@@ -48,7 +48,7 @@ export function Scene() {
 
   useEffect(() => {
     camera.lookAt(0, 0, 0);
-    camera.position.set(0, 5, 10);
+    camera.position.set(0, 8, 20);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
@@ -99,7 +99,10 @@ export function Scene() {
         minPolarAngle={0}
         maxPolarAngle={Math.PI / 2}
         minDistance={5}
-        maxDistance={20}
+        maxDistance={40}
+        target={[0, 0, 0]}
+        enableDamping
+        dampingFactor={0.05}
       />
 
       <group position={[0, 0, 0]} onClick={handleDeckClick}>
