@@ -1,9 +1,6 @@
 import {
   Environment as EnvironmentImpl,
   Lightformer,
-  AccumulativeShadows,
-  RandomizedLight,
-  ContactShadows,
   SoftShadows,
   BakeShadows,
 } from "@react-three/drei";
@@ -32,7 +29,7 @@ export function Environment({
   intensity = 1,
   blur = 0.65,
 }: EnvironmentProps) {
-  const lightRef = useRef<THREE.DirectionalLight>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
 
   // Animate the main light to create subtle movement
   useFrame((state) => {
@@ -49,11 +46,13 @@ export function Environment({
       <SoftShadows size={25} samples={16} focus={0.5} />
       <BakeShadows />
 
-      {/* Main Directional Light */}
-      <directionalLight
+      {/* Main Omni-directional Light */}
+      <pointLight
         ref={lightRef}
-        position={[5, 5, 5]}
-        intensity={intensity}
+        position={[0, 5, 0]}
+        intensity={intensity * 2}
+        distance={20}
+        decay={2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -65,9 +64,8 @@ export function Environment({
         shadow-bias={-0.0001}
       />
 
-      {/* Fill Lights */}
-      <ambientLight intensity={0.2} />
-      <directionalLight position={[-5, 5, -5]} intensity={0.2} />
+      {/* Ambient Light for general illumination */}
+      <ambientLight intensity={0.4} />
 
       {/* Environment Setup */}
       <EnvironmentImpl preset={preset} background blur={blur}>
@@ -85,36 +83,6 @@ export function Environment({
           rotation-y={Math.PI / 2}
         />
       </EnvironmentImpl>
-
-      {/* Ground Shadows */}
-      <AccumulativeShadows
-        temporal
-        frames={60}
-        alphaTest={0.85}
-        scale={20}
-        position={[0, -0.5, 0]}
-        color="black"
-        opacity={0.8}
-      >
-        <RandomizedLight
-          amount={8}
-          radius={4}
-          ambient={0.5}
-          intensity={1}
-          position={[5, 5, -10]}
-          bias={0.001}
-        />
-      </AccumulativeShadows>
-
-      {/* Contact Shadows for Objects */}
-      <ContactShadows
-        opacity={1}
-        scale={20}
-        blur={2}
-        far={10}
-        resolution={512}
-        color="#000000"
-      />
     </>
   );
 }
