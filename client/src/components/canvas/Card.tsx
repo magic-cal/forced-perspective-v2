@@ -43,11 +43,11 @@ export function Card({
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <mesh castShadow receiveShadow>
+      <mesh>
         <boxGeometry args={[2.5, 3.5, 0.01]} />{" "}
         {/* Standard card proportions */}
         <meshStandardMaterial
-          color={hovered ? "#888888" : "#ffffff"}
+          // color={hovered ? "#888888" : ""}
           metalness={0.1}
           roughness={0.8}
         />

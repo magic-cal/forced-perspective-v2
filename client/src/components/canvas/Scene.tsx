@@ -73,11 +73,13 @@ export function Scene() {
         maxDistance={20}
       />
 
+      {/* <Deck /> */}
+
       {/* Ground plane for better perspective */}
-      {/* <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
         <planeGeometry args={[30, 30]} />
         <meshStandardMaterial color="#f0f0f0" />
-      </mesh> */}
+      </mesh>
 
       {/* Demo Cards */}
       {demoCards.map((card, index) => (

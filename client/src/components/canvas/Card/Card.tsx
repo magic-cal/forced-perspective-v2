@@ -1,7 +1,13 @@
 import { useRef, useState, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { animated, useSpring } from "@react-spring/three";
-import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
+import {
+  CardSuit,
+  CardValue,
+  CARD_DIMENSIONS,
+  VALUE_TO_FILE_MAP,
+  SUIT_TO_FILE_MAP,
+} from "../../../types/cards";
 
 // Create rounded rectangle shape
 const createRoundedRectGeometry = (
@@ -61,40 +67,47 @@ export function Card({
   const [isHovered, setIsHovered] = useState(false);
   const [frontTexture, setFrontTexture] = useState<THREE.Texture | null>(null);
   const [backTexture, setBackTexture] = useState<THREE.Texture | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load textures directly
   useEffect(() => {
     const textureLoader = new THREE.TextureLoader();
-    const suitLetter = suit.charAt(0).toUpperCase();
-    const valueNumber =
-      value === "A"
-        ? "1"
-        : value === "J"
-        ? "11"
-        : value === "Q"
-        ? "12"
-        : value === "K"
-        ? "13"
-        : value;
+    const suitLetter = SUIT_TO_FILE_MAP[suit];
+    const valueNumber = VALUE_TO_FILE_MAP[value];
+
+    setIsLoading(true);
 
     // Load front texture
     textureLoader.load(
-      `https://localhost:5173/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`,
+      `/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`,
       (texture) => {
         texture.flipY = false;
         texture.needsUpdate = true;
+        texture.anisotropy = 16;
+        texture.encoding = THREE.sRGBEncoding;
+        texture.generateMipmaps = true;
         setFrontTexture(texture);
+        setIsLoading(false);
       },
       undefined,
-      (error) => console.error("Error loading front texture:", error)
+      (error) => {
+        console.error(
+          `Error loading front texture for ${suit} ${value}:`,
+          error
+        );
+        setIsLoading(false);
+      }
     );
 
     // Load back texture
     textureLoader.load(
-      `https://localhost:5173/src/assets/playingCardBacks/RED_BACK.svg`,
+      `/src/assets/playingCardBacks/RED_BACK.svg`,
       (texture) => {
         texture.flipY = false;
         texture.needsUpdate = true;
+        texture.anisotropy = 16;
+        texture.encoding = THREE.sRGBEncoding;
+        texture.generateMipmaps = true;
         setBackTexture(texture);
       },
       undefined,
@@ -153,7 +166,7 @@ export function Card({
         geometry={geometry}
       >
         <meshStandardMaterial
-          color={isSelected ? "#ffeb3b" : "#ffffff"}
+          color={isSelected ? "#ffeb3b" : isLoading ? "#cccccc" : "#ffffff"}
           map={frontTexture}
           side={THREE.FrontSide}
           transparent
@@ -171,7 +184,7 @@ export function Card({
         geometry={geometry}
       >
         <meshStandardMaterial
-          color="#ffffff"
+          color="#ff0000"
           map={backTexture}
           side={THREE.BackSide}
           transparent
