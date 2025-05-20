@@ -80,6 +80,8 @@ export function Card({
     const darkMaterial = new THREE.MeshPhongMaterial({
       transparent: true,
       opacity: 0,
+      depthWrite: true,
+      depthTest: true,
     });
 
     const frontMaterial = new THREE.MeshPhongMaterial({
@@ -87,7 +89,9 @@ export function Card({
       map: frontTexture,
       transparent: true,
       shininess: 40,
-      depthTest: false,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.DoubleSide,
     });
 
     const backMaterial = new THREE.MeshPhongMaterial({
@@ -95,7 +99,9 @@ export function Card({
       map: backTexture,
       transparent: true,
       shininess: 40,
-      depthTest: false,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.DoubleSide,
     });
 
     return [
