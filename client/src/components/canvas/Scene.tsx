@@ -3,8 +3,8 @@ import { useThree } from "@react-three/fiber";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { Environment } from "./Environment";
-import { Card } from "./Card";
 import { CardSuit, CardValue } from "./Card/types";
+import { Card } from "@/components/canvas/Card";
 
 export function Scene() {
   const { camera, gl } = useThree();
@@ -62,7 +62,7 @@ export function Scene() {
       <Preload all />
 
       {/* Environment and Lighting */}
-      <Environment preset="city" intensity={1} blur={0.65} />
+      <Environment preset="sunset" intensity={1} blur={0.65} />
 
       {/* Controls */}
       <OrbitControls
@@ -76,17 +76,16 @@ export function Scene() {
       {/* <Deck /> */}
 
       {/* Ground plane for better perspective */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
+      {/* <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
         <planeGeometry args={[30, 30]} />
         <meshStandardMaterial color="#f0f0f0" />
-      </mesh>
+      </mesh> */}
 
       {/* Demo Cards */}
       {demoCards.map((card, index) => (
         <Card
           key={index}
           {...card}
-          isSelected={selectedCard === index}
           isInteractive={true}
           onClick={() => setSelectedCard(index === selectedCard ? null : index)}
           onHover={(isHovering: boolean) => {

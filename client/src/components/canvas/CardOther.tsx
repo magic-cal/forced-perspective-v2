@@ -27,7 +27,6 @@ export function Card({
   rotation = [0, 0, 0],
   suit = "hearts",
   value = "A",
-  isFlipped = false,
   onClick,
 }: CardProps) {
   const group = useRef<THREE.Group>(null);

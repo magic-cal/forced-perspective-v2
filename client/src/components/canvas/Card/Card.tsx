@@ -1,44 +1,8 @@
-import { useRef, useState, useMemo, useEffect } from "react";
+import { useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { animated, useSpring } from "@react-spring/three";
-import {
-  CardSuit,
-  CardValue,
-  CARD_DIMENSIONS,
-  VALUE_TO_FILE_MAP,
-  SUIT_TO_FILE_MAP,
-} from "../../../types/cards";
-
-// Create rounded rectangle shape
-const createRoundedRectGeometry = (
-  width: number,
-  height: number,
-  radius: number
-) => {
-  // Create a shape with rounded corners
-  const shape = new THREE.Shape();
-  const x = -width / 2;
-  const y = -height / 2;
-
-  shape.moveTo(x + radius, y);
-  shape.lineTo(x + width - radius, y);
-  shape.quadraticCurveTo(x + width, y, x + width, y + radius);
-  shape.lineTo(x + width, y + height - radius);
-  shape.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  shape.lineTo(x + radius, y + height);
-  shape.quadraticCurveTo(x, y + height, x, y + height - radius);
-  shape.lineTo(x, y + radius);
-  shape.quadraticCurveTo(x, y, x + radius, y);
-
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: CARD_DIMENSIONS.thickness,
-    bevelEnabled: false,
-    steps: 1,
-    curveSegments: 10,
-  });
-
-  return geometry;
-};
+import { useLoader } from "@react-three/fiber";
+import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
 
 export interface CardProps {
   position?: [number, number, number];
@@ -65,55 +29,44 @@ export function Card({
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   const [isHovered, setIsHovered] = useState(false);
-  const [frontTexture, setFrontTexture] = useState<THREE.Texture | null>(null);
-  const [backTexture, setBackTexture] = useState<THREE.Texture | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load textures directly
-  useEffect(() => {
-    const textureLoader = new THREE.TextureLoader();
-    const suitLetter = SUIT_TO_FILE_MAP[suit];
-    const valueNumber = VALUE_TO_FILE_MAP[value];
-
-    setIsLoading(true);
-
-    // Load front texture
-    textureLoader.load(
-      `/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`,
-      (texture) => {
-        texture.flipY = false;
-        texture.needsUpdate = true;
-        texture.anisotropy = 16;
-        texture.encoding = THREE.sRGBEncoding;
-        texture.generateMipmaps = true;
-        setFrontTexture(texture);
-        setIsLoading(false);
-      },
-      undefined,
-      (error) => {
-        console.error(
-          `Error loading front texture for ${suit} ${value}:`,
-          error
-        );
-        setIsLoading(false);
-      }
-    );
-
-    // Load back texture
-    textureLoader.load(
-      `/src/assets/playingCardBacks/RED_BACK.svg`,
-      (texture) => {
-        texture.flipY = false;
-        texture.needsUpdate = true;
-        texture.anisotropy = 16;
-        texture.encoding = THREE.sRGBEncoding;
-        texture.generateMipmaps = true;
-        setBackTexture(texture);
-      },
-      undefined,
-      (error) => console.error("Error loading back texture:", error)
-    );
+  // Get texture URLs
+  const frontTextureUrl = useMemo(() => {
+    const suitLetter = suit.charAt(0).toUpperCase();
+    const valueNumber =
+      value === "A"
+        ? "1"
+        : value === "J"
+        ? "11"
+        : value === "Q"
+        ? "12"
+        : value === "K"
+        ? "13"
+        : value;
+    return `/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`;
   }, [suit, value]);
+
+  const backTextureUrl = useMemo(() => {
+    return `/src/assets/playingCardBacks/RED_BACK.svg`;
+  }, []);
+
+  // Load textures using useLoader
+  const [frontTexture, backTexture] = useLoader(THREE.TextureLoader, [
+    frontTextureUrl,
+    backTextureUrl,
+  ]);
+
+  // Configure textures
+  useMemo(() => {
+    if (frontTexture) {
+      frontTexture.flipY = false;
+      frontTexture.needsUpdate = true;
+    }
+    if (backTexture) {
+      backTexture.flipY = false;
+      backTexture.needsUpdate = true;
+    }
+  }, [frontTexture, backTexture]);
 
   // Animation springs
   const { hoverScale, rotationY } = useSpring({
@@ -122,14 +75,38 @@ export function Card({
     config: { mass: 1, tension: 170, friction: 26 },
   });
 
-  // Create geometry once with proper rounded corners
-  const geometry = useMemo(() => {
-    return createRoundedRectGeometry(
-      CARD_DIMENSIONS.width,
-      CARD_DIMENSIONS.height,
-      0.15 // Increased radius for more noticeable rounding
-    );
-  }, []);
+  // Create materials
+  const materials = useMemo(() => {
+    const darkMaterial = new THREE.MeshPhongMaterial({
+      transparent: true,
+      opacity: 0,
+    });
+
+    const frontMaterial = new THREE.MeshPhongMaterial({
+      color: isSelected ? "#ffeb3b" : "#ffffff",
+      map: frontTexture,
+      transparent: true,
+      shininess: 40,
+      depthTest: false,
+    });
+
+    const backMaterial = new THREE.MeshPhongMaterial({
+      color: "#ffffff",
+      map: backTexture,
+      transparent: true,
+      shininess: 40,
+      depthTest: false,
+    });
+
+    return [
+      darkMaterial, // left
+      darkMaterial, // right
+      darkMaterial, // top
+      darkMaterial, // bottom
+      frontMaterial, // front
+      backMaterial, // back
+    ];
+  }, [frontTexture, backTexture, isSelected]);
 
   const handlePointerOver = () => {
     if (!isInteractive) return;
@@ -153,46 +130,24 @@ export function Card({
       ref={group}
       position={position}
       rotation={rotation}
-      onClick={handleClick}
-      onPointerOver={handlePointerOver}
-      onPointerOut={handlePointerOut}
+      // onClick={handleClick}
+      // onPointerOver={handlePointerOver}
+      // onPointerOut={handlePointerOut}
       scale={hoverScale}
     >
-      {/* Front face */}
       <animated.mesh
-        castShadow
-        receiveShadow
+        // castShadow
+        // receiveShadow
         rotation-y={rotationY}
-        geometry={geometry}
-      >
-        <meshStandardMaterial
-          color={isSelected ? "#ffeb3b" : isLoading ? "#cccccc" : "#ffffff"}
-          map={frontTexture}
-          side={THREE.FrontSide}
-          transparent
-          alphaTest={0.5}
-          metalness={0.1}
-          roughness={0.6}
-        />
-      </animated.mesh>
-
-      {/* Back face */}
-      <animated.mesh
-        castShadow
-        receiveShadow
-        rotation-y={rotationY.to((r) => r + Math.PI)}
-        geometry={geometry}
-      >
-        <meshStandardMaterial
-          color="#ff0000"
-          map={backTexture}
-          side={THREE.BackSide}
-          transparent
-          alphaTest={0.5}
-          metalness={0.1}
-          roughness={0.6}
-        />
-      </animated.mesh>
+        geometry={
+          new THREE.BoxGeometry(
+            CARD_DIMENSIONS.width,
+            CARD_DIMENSIONS.height,
+            CARD_DIMENSIONS.thickness
+          )
+        }
+        material={materials}
+      />
     </animated.group>
   );
 }
