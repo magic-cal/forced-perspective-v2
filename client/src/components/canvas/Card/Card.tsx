@@ -2,40 +2,36 @@ import { useRef, useState, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { animated, useSpring } from "@react-spring/three";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
-import { textureManager } from "../../../utils/TextureManager";
 
-// Create rounded rectangle shape for the card
-const createRoundedRectShape = (
+// Create rounded rectangle shape
+const createRoundedRectGeometry = (
   width: number,
   height: number,
   radius: number
 ) => {
+  // Create a shape with rounded corners
   const shape = new THREE.Shape();
-  shape.moveTo(-width / 2, -height / 2 + radius);
-  shape.lineTo(-width / 2, height / 2 - radius);
-  shape.quadraticCurveTo(
-    -width / 2,
-    height / 2,
-    -width / 2 + radius,
-    height / 2
-  );
-  shape.lineTo(width / 2 - radius, height / 2);
-  shape.quadraticCurveTo(width / 2, height / 2, width / 2, height / 2 - radius);
-  shape.lineTo(width / 2, -height / 2 + radius);
-  shape.quadraticCurveTo(
-    width / 2,
-    -height / 2,
-    width / 2 - radius,
-    -height / 2
-  );
-  shape.lineTo(-width / 2 + radius, -height / 2);
-  shape.quadraticCurveTo(
-    -width / 2,
-    -height / 2,
-    -width / 2,
-    -height / 2 + radius
-  );
-  return shape;
+  const x = -width / 2;
+  const y = -height / 2;
+
+  shape.moveTo(x + radius, y);
+  shape.lineTo(x + width - radius, y);
+  shape.quadraticCurveTo(x + width, y, x + width, y + radius);
+  shape.lineTo(x + width, y + height - radius);
+  shape.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  shape.lineTo(x + radius, y + height);
+  shape.quadraticCurveTo(x, y + height, x, y + height - radius);
+  shape.lineTo(x, y + radius);
+  shape.quadraticCurveTo(x, y, x + radius, y);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: CARD_DIMENSIONS.thickness,
+    bevelEnabled: false,
+    steps: 1,
+    curveSegments: 10,
+  });
+
+  return geometry;
 };
 
 export interface CardProps {
@@ -66,32 +62,44 @@ export function Card({
   const [frontTexture, setFrontTexture] = useState<THREE.Texture | null>(null);
   const [backTexture, setBackTexture] = useState<THREE.Texture | null>(null);
 
-  // Load textures using TextureManager
+  // Load textures directly
   useEffect(() => {
-    let isMounted = true;
+    const textureLoader = new THREE.TextureLoader();
+    const suitLetter = suit.charAt(0).toUpperCase();
+    const valueNumber =
+      value === "A"
+        ? "1"
+        : value === "J"
+        ? "11"
+        : value === "Q"
+        ? "12"
+        : value === "K"
+        ? "13"
+        : value;
 
-    const loadTextures = async () => {
-      try {
-        const [front, back] = await Promise.all([
-          textureManager.loadCardTexture(suit, value),
-          textureManager.loadCardBack("RED"),
-        ]);
+    // Load front texture
+    textureLoader.load(
+      `https://localhost:5173/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`,
+      (texture) => {
+        texture.flipY = false;
+        texture.needsUpdate = true;
+        setFrontTexture(texture);
+      },
+      undefined,
+      (error) => console.error("Error loading front texture:", error)
+    );
 
-        if (isMounted) {
-          setFrontTexture(front);
-          setBackTexture(back);
-        }
-      } catch (error) {
-        console.error("Error loading card textures:", error);
-      }
-    };
-
-    loadTextures();
-
-    // Cleanup function
-    return () => {
-      isMounted = false;
-    };
+    // Load back texture
+    textureLoader.load(
+      `https://localhost:5173/src/assets/playingCardBacks/RED_BACK.svg`,
+      (texture) => {
+        texture.flipY = false;
+        texture.needsUpdate = true;
+        setBackTexture(texture);
+      },
+      undefined,
+      (error) => console.error("Error loading back texture:", error)
+    );
   }, [suit, value]);
 
   // Animation springs
@@ -101,18 +109,13 @@ export function Card({
     config: { mass: 1, tension: 170, friction: 26 },
   });
 
-  // Create geometry once
+  // Create geometry once with proper rounded corners
   const geometry = useMemo(() => {
-    const shape = createRoundedRectShape(
+    return createRoundedRectGeometry(
       CARD_DIMENSIONS.width,
       CARD_DIMENSIONS.height,
-      0.1
+      0.15 // Increased radius for more noticeable rounding
     );
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-      depth: CARD_DIMENSIONS.thickness,
-      bevelEnabled: false,
-    });
-    return geometry;
   }, []);
 
   const handlePointerOver = () => {
@@ -132,16 +135,6 @@ export function Card({
     onClick?.();
   };
 
-  // Material properties
-  const materialProps = useMemo(
-    () => ({
-      metalness: 0.1,
-      roughness: 0.6,
-      envMapIntensity: 1.5,
-    }),
-    []
-  );
-
   return (
     <animated.group
       ref={group}
@@ -160,11 +153,13 @@ export function Card({
         geometry={geometry}
       >
         <meshStandardMaterial
-          {...materialProps}
           color={isSelected ? "#ffeb3b" : "#ffffff"}
           map={frontTexture}
           side={THREE.FrontSide}
           transparent
+          alphaTest={0.5}
+          metalness={0.1}
+          roughness={0.6}
         />
       </animated.mesh>
 
@@ -176,11 +171,13 @@ export function Card({
         geometry={geometry}
       >
         <meshStandardMaterial
-          {...materialProps}
           color="#ffffff"
           map={backTexture}
           side={THREE.BackSide}
           transparent
+          alphaTest={0.5}
+          metalness={0.1}
+          roughness={0.6}
         />
       </animated.mesh>
     </animated.group>
