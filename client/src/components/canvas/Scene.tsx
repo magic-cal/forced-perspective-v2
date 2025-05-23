@@ -49,7 +49,7 @@ export function Scene() {
 
   useEffect(() => {
     camera.lookAt(0, 0, 0);
-    camera.position.set(0, 5, 25);
+    camera.position.set(0, 0, 0);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
@@ -98,7 +98,7 @@ export function Scene() {
       <OrbitControls
         makeDefault
         minPolarAngle={0}
-        maxPolarAngle={Math.PI / 2}
+        maxPolarAngle={Math.PI}
         minDistance={20}
         maxDistance={50}
         target={[0, 0, 0]}

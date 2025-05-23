@@ -1,14 +1,23 @@
-import { useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { useRef, useMemo } from "react";
 import * as THREE from "three";
 import { Card } from "./Card";
-import { CardSuit, CardValue, CARD_SUITS, CARD_VALUES } from "./Card/types";
-import { CARD_DIMENSIONS } from "./Card/types";
+import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES } from "./Card/types";
 
 interface CardSphereProps {
   radius?: number;
   maxCardsPerRow?: number;
   rotationSpeed?: number;
+}
+
+// Fisher-Yates shuffle algorithm
+function shuffleArray<T>(array: T[]): T[] {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
 }
 
 export function CardSphere({
@@ -19,14 +28,26 @@ export function CardSphere({
   const sphereRef = useRef<THREE.Group>(null);
   const { camera } = useThree();
 
+  // Create and shuffle a deck of all possible cards
+  const shuffledDeck = useMemo(() => {
+    const deck = [];
+    for (const suit of CARD_SUITS) {
+      for (const value of CARD_VALUES) {
+        deck.push({ suit, value });
+      }
+    }
+    return shuffleArray(deck);
+  }, []);
+
   // Calculate spacing based on card dimensions
   const cardWidth = CARD_DIMENSIONS.width;
   const cardHeight = CARD_DIMENSIONS.height;
-  const spacingFactor = 1.001;
+  const spacingFactor = 1.4;
 
   // Generate cards for the sphere
   const cards = [];
   const rows = 20;
+  let cardIndex = 0;
 
   for (let row = 0; row < rows; row++) {
     const rowCards = [];
@@ -36,7 +57,7 @@ export function CardSphere({
     const sinValue = Math.pow(Math.sin(phi), 2);
     const cardsInRow = Math.max(2, Math.round(maxCardsPerRow * sinValue));
 
-    const rowRadius = radius * (1 + Math.sin(phi) * 0.1);
+    const rowRadius = radius * (1 + Math.sin(phi) * 0.1) * spacingFactor;
 
     if (cardsInRow < 3) continue;
 
@@ -47,14 +68,17 @@ export function CardSphere({
       const y = rowRadius * Math.cos(phi);
       const z = rowRadius * Math.sin(phi) * Math.sin(theta);
 
-      const suit = CARD_SUITS[i % CARD_SUITS.length];
-      const value = CARD_VALUES[i % CARD_VALUES.length];
+      const verticalOffset = cardHeight * 1.0 * Math.sin(phi);
+
+      // Get the next card from our shuffled deck
+      const card = shuffledDeck[cardIndex % shuffledDeck.length];
+      cardIndex++;
 
       rowCards.push(
-        <group key={`${row}-${i}`} position={[x, y, z]}>
+        <group key={`${row}-${i}`} position={[x, y + verticalOffset, z]}>
           <Card
-            suit={suit}
-            value={value}
+            suit={card.suit}
+            value={card.value}
             isFlipped={false}
             isInteractive={false}
           />
