@@ -7,6 +7,7 @@ import { CardSuit, CardValue, CARD_SUITS, CARD_VALUES } from "./Card/types";
 import { Card } from "@/components/canvas/Card";
 import { useSpring, animated } from "@react-spring/three";
 import { CARD_DIMENSIONS } from "./Card/types";
+import { CardSphere } from "./CardSphere";
 
 interface CardState {
   position: [number, number, number];
@@ -48,7 +49,7 @@ export function Scene() {
 
   useEffect(() => {
     camera.lookAt(0, 0, 0);
-    camera.position.set(0, 8, 20);
+    camera.position.set(0, 5, 25);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
@@ -98,14 +99,14 @@ export function Scene() {
         makeDefault
         minPolarAngle={0}
         maxPolarAngle={Math.PI / 2}
-        minDistance={5}
-        maxDistance={40}
+        minDistance={20}
+        maxDistance={50}
         target={[0, 0, 0]}
         enableDamping
-        dampingFactor={0.05}
+        dampingFactor={0.1}
       />
 
-      <group position={[0, 0, 0]} onClick={handleDeckClick}>
+      {/* <group position={[0, 0, 0]} onClick={handleDeckClick}>
         {deck.map((card, index) => (
           <AnimatedCard
             key={`${card.suit}-${card.value}-${index}`}
@@ -114,7 +115,9 @@ export function Scene() {
             isSpread={isSpread}
           />
         ))}
-      </group>
+      </group> */}
+
+      <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
     </>
   );
 }
