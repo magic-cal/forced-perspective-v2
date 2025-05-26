@@ -1,5 +1,6 @@
 import { Canvas } from "@/components/canvas/Canvas";
 import { Interface } from "@/components/dom/Interface";
+import { Menu } from "@/components/dom/Menu";
 
 export default function App() {
   return (
@@ -9,6 +10,7 @@ export default function App() {
 
       {/* DOM Content - UI Overlay */}
       <Interface />
+      <Menu />
 
       <style>{`
         .app-container {

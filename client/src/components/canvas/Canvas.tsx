@@ -41,6 +41,7 @@ export function Canvas({ className }: CanvasWrapperProps) {
           glRef.current = gl;
         }}
       >
+        <color attach="background" args={["#1a1a1a"]} />
         <Suspense fallback={null}>
           <Scene />
         </Suspense>

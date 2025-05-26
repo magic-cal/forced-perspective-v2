@@ -8,6 +8,8 @@ import { Card } from "@/components/canvas/Card";
 import { useSpring, animated } from "@react-spring/three";
 import { CARD_DIMENSIONS } from "./Card/types";
 import { CardSphere } from "./CardSphere";
+import { DeviceOrientationControls } from "./DeviceOrientationControls";
+import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
 
 interface CardState {
   position: [number, number, number];
@@ -46,10 +48,13 @@ function AnimatedCard({
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
+  const isDeviceMovementEnabled = useDeviceOrientationStore(
+    (state) => state.isEnabled
+  );
 
   useEffect(() => {
+    camera.position.set(0, 0, 30);
     camera.lookAt(0, 0, 0);
-    camera.position.set(0, 0, 0);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
@@ -99,12 +104,14 @@ export function Scene() {
         makeDefault
         minPolarAngle={0}
         maxPolarAngle={Math.PI}
-        minDistance={20}
+        minDistance={10}
         maxDistance={50}
         target={[0, 0, 0]}
         enableDamping
         dampingFactor={0.1}
+        enabled={!isDeviceMovementEnabled}
       />
+      <DeviceOrientationControls enabled={isDeviceMovementEnabled} />
 
       {/* <group position={[0, 0, 0]} onClick={handleDeckClick}>
         {deck.map((card, index) => (
