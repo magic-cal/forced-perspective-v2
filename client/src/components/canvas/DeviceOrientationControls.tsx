@@ -1,5 +1,5 @@
 import { useThree } from "@react-three/fiber";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import * as THREE from "three";
 
 interface DeviceOrientationControlsProps {
@@ -27,6 +27,18 @@ export function DeviceOrientationControls({
     absolute: boolean;
   } | null>(null);
 
+  // Store initial camera orientation and device orientation
+  const initialCameraQuaternion = useRef<THREE.Quaternion>();
+  const initialDeviceOrientation = useRef<{
+    alpha: number;
+    beta: number;
+    gamma: number;
+  }>();
+
+  // Store target quaternion for smooth interpolation
+  const targetQuaternion = useRef(new THREE.Quaternion());
+  const currentQuaternion = useRef(new THREE.Quaternion());
+
   const handleOrientation = useCallback(
     (event: DeviceOrientationEvent) => {
       const newValues = {
@@ -44,22 +56,37 @@ export function DeviceOrientationControls({
         setInitialValues(newValues);
       }
 
-      // Convert degrees to radians
-      const alpha = THREE.MathUtils.degToRad(event.alpha || 0);
-      const beta = THREE.MathUtils.degToRad(event.beta || 0);
-      const gamma = THREE.MathUtils.degToRad(event.gamma || 0);
+      // Store initial device orientation on first event
+      if (!initialDeviceOrientation.current) {
+        initialDeviceOrientation.current = {
+          alpha: event.alpha || 0,
+          beta: event.beta || 0,
+          gamma: event.gamma || 0,
+        };
+      }
 
-      // Create a rotation matrix that maps device orientation to camera rotation
+      // Calculate relative rotation from initial orientation
+      const alpha = THREE.MathUtils.degToRad(
+        (event.alpha || 0) - initialDeviceOrientation.current.alpha
+      );
+      const beta = THREE.MathUtils.degToRad(
+        (event.beta || 0) - initialDeviceOrientation.current.beta
+      );
+      const gamma = THREE.MathUtils.degToRad(
+        (event.gamma || 0) - initialDeviceOrientation.current.gamma
+      );
+
+      // Create a rotation matrix for the relative device movement
       const rotationMatrix = new THREE.Matrix4();
 
       // Apply rotations in the correct order:
-      // 1. Yaw (alpha) - rotation around Z axis (0-360)
+      // 1. Yaw (alpha) - rotation around Z axis
       const yawMatrix = new THREE.Matrix4().makeRotationZ(alpha);
 
-      // 2. Pitch (beta) - rotation around X axis (-180 to 180)
+      // 2. Pitch (beta) - rotation around X axis
       const pitchMatrix = new THREE.Matrix4().makeRotationX(beta);
 
-      // 3. Roll (gamma) - rotation around Y axis (-90 to 90)
+      // 3. Roll (gamma) - rotation around Y axis
       const rollMatrix = new THREE.Matrix4().makeRotationY(gamma);
 
       // Combine the rotations in the correct order
@@ -67,11 +94,51 @@ export function DeviceOrientationControls({
       rotationMatrix.multiply(pitchMatrix);
       rotationMatrix.multiply(rollMatrix);
 
-      // Apply the rotation to the camera
-      camera.quaternion.setFromRotationMatrix(rotationMatrix);
+      // Calculate target quaternion
+      if (initialCameraQuaternion.current) {
+        const newQuaternion = initialCameraQuaternion.current.clone();
+        newQuaternion.multiply(
+          new THREE.Quaternion().setFromRotationMatrix(rotationMatrix)
+        );
+        targetQuaternion.current.copy(newQuaternion);
+      }
     },
-    [camera, testAxis, initialValues]
+    [testAxis, initialValues]
   );
+
+  // Handle enabling/disabling the controls
+  useEffect(() => {
+    if (enabled) {
+      // Store the current camera orientation when enabling
+      initialCameraQuaternion.current = camera.quaternion.clone();
+      currentQuaternion.current.copy(camera.quaternion);
+      targetQuaternion.current.copy(camera.quaternion);
+      initialDeviceOrientation.current = undefined; // Reset device orientation
+    } else {
+      // Keep the current camera orientation when disabling
+      // No need to do anything as the camera will maintain its current rotation
+    }
+  }, [enabled, camera]);
+
+  // Smooth camera movement
+  useEffect(() => {
+    if (!enabled) return;
+
+    let animationFrameId: number;
+
+    const updateCamera = () => {
+      currentQuaternion.current.slerp(targetQuaternion.current, 0.1);
+      camera.quaternion.copy(currentQuaternion.current);
+
+      animationFrameId = requestAnimationFrame(updateCamera);
+    };
+
+    updateCamera();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [enabled, camera]);
 
   useEffect(() => {
     if (!enabled) {
@@ -260,7 +327,9 @@ export function DeviceOrientationControls({
 
   // Create debug button
   useEffect(() => {
-    if (debugMode) return;
+    if (debugMode) {
+      return;
+    }
 
     const button = document.createElement("button");
     button.textContent = "Debug Controls";
