@@ -3,8 +3,10 @@ import * as THREE from "three";
 import { animated, useSpring } from "@react-spring/three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
+import { useCardSelectionStore } from "@/store/cardSelectionStore";
 
 export interface CardProps {
+  id: string;
   position?: [number, number, number];
   rotation?: [number, number, number];
   suit: CardSuit;
@@ -17,6 +19,7 @@ export interface CardProps {
 }
 
 export function Card({
+  id,
   position = [0, 0, 0],
   rotation = [0, 0, 0],
   suit,
@@ -29,6 +32,7 @@ export function Card({
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   const [isHovered, setIsHovered] = useState(false);
+  const { setSelectedCard, setHoveredCard } = useCardSelectionStore();
 
   // Get texture URLs
   const frontTextureUrl = useMemo(() => {
@@ -116,17 +120,36 @@ export function Card({
   const handlePointerOver = () => {
     if (!isInteractive) return;
     setIsHovered(true);
+    setHoveredCard({
+      id,
+      suit,
+      value,
+      position,
+      rotation,
+      isFlipped,
+      isSelected,
+    });
     onHover?.(true);
   };
 
   const handlePointerOut = () => {
     if (!isInteractive) return;
     setIsHovered(false);
+    setHoveredCard(null);
     onHover?.(false);
   };
 
   const handleClick = () => {
     if (!isInteractive) return;
+    setSelectedCard({
+      id,
+      suit,
+      value,
+      position,
+      rotation,
+      isFlipped,
+      isSelected,
+    });
     onClick?.();
   };
 
@@ -135,9 +158,9 @@ export function Card({
       ref={group}
       position={position}
       rotation={rotation}
-      // onClick={handleClick}
-      // onPointerOver={handlePointerOver}
-      // onPointerOut={handlePointerOut}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
       scale={hoverScale}
     >
       <animated.mesh

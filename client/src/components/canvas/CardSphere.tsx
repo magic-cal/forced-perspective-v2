@@ -77,10 +77,11 @@ export function CardSphere({
       rowCards.push(
         <group key={`${row}-${i}`} position={[x, y + verticalOffset, z]}>
           <Card
+            id={`${card.suit}-${card.value}-${row}-${i}`}
             suit={card.suit}
             value={card.value}
             isFlipped={false}
-            isInteractive={false}
+            isInteractive={true}
           />
         </group>
       );
