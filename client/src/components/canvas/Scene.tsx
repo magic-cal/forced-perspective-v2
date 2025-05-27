@@ -1,100 +1,29 @@
 import { OrbitControls, Preload } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import * as THREE from "three";
 import { Environment } from "./Environment";
-import { CardSuit, CardValue, CARD_SUITS, CARD_VALUES } from "./Card/types";
-import { Card } from "@/components/canvas/Card";
-import { useSpring, animated } from "@react-spring/three";
-import { CARD_DIMENSIONS } from "./Card/types";
 import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
 import { LandmarksScene } from "./LandmarksScene";
-
-interface CardState {
-  position: [number, number, number];
-  rotation: [number, number, number];
-  suit: CardSuit;
-  value: CardValue;
-  isFlipped: boolean;
-}
-
-interface AnimatedCardProps extends CardState {
-  finalPosition: [number, number, number];
-  isSpread: boolean;
-}
-
-function AnimatedCard({
-  finalPosition,
-  isSpread,
-  ...cardProps
-}: AnimatedCardProps) {
-  const { position, rotation } = useSpring({
-    position: isSpread ? finalPosition : cardProps.position,
-    rotation: isSpread ? [0, 0, 0] : cardProps.rotation,
-    config: { mass: 1, tension: 170, friction: 26 },
-  });
-
-  return (
-    <animated.group
-      position={position as unknown as THREE.Vector3}
-      rotation={rotation as unknown as THREE.Euler}
-    >
-      <Card id={""} {...cardProps} isInteractive={false} />
-    </animated.group>
-  );
-}
+import { CardDeck } from "./CardDeck";
 
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
-  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks">(
-    "cards"
+  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck">(
+    "card-deck"
   );
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
 
   useEffect(() => {
-    camera.position.set(0, 0, 30);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0, 0, 0);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [camera, gl]);
-
-  const getFinalPosition = (
-    suit: CardSuit,
-    value: CardValue,
-    index: number
-  ): [number, number, number] => {
-    const suitIndex = CARD_SUITS.indexOf(suit);
-    const valueIndex = CARD_VALUES.indexOf(value);
-
-    const row = suitIndex;
-    const col = valueIndex;
-
-    return [(col - 6) * 3, -row * 4, 0];
-  };
-
-  const deck = useMemo(() => {
-    const cards: CardState[] = [];
-    let index = 0;
-
-    for (const suit of CARD_SUITS) {
-      for (const value of CARD_VALUES) {
-        cards.push({
-          position: [0, 0, (index * CARD_DIMENSIONS.thickness) / 2],
-          rotation: [0, 0, 0],
-          suit,
-          value,
-          isFlipped: false,
-        });
-        index++;
-      }
-    }
-    return cards;
-  }, []);
 
   const handleDeckClick = () => {
     setIsSpread(!isSpread);
@@ -117,7 +46,9 @@ export function Scene() {
       />
       <DeviceOrientationControls enabled={isDeviceMovementEnabled} />
 
-      {currentScene === "cards" ? (
+      {currentScene === "card-deck" ? (
+        <CardDeck isSpread={isSpread} onDeckClick={handleDeckClick} />
+      ) : currentScene === "cards" ? (
         <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
       ) : (
         <LandmarksScene />
