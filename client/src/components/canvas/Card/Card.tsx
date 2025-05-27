@@ -1,6 +1,5 @@
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useEffect } from "react";
 import * as THREE from "three";
-import { animated, useSpring } from "@react-spring/three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
@@ -26,100 +25,102 @@ export function Card({
   value,
   isFlipped = false,
   isSelected = false,
-  isInteractive = true,
+  isInteractive = false,
   onClick,
   onHover,
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
-  const [isHovered, setIsHovered] = useState(false);
   const { setSelectedCard, setHoveredCard } = useCardSelectionStore();
 
-  // Get texture URLs
+  // Create reusable materials
+  const materialsRef = useRef<{
+    dark: THREE.MeshPhongMaterial;
+    front: THREE.MeshPhongMaterial;
+    back: THREE.MeshPhongMaterial;
+  }>({
+    dark: new THREE.MeshPhongMaterial({
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+    }),
+    front: new THREE.MeshPhongMaterial({
+      color: "#ffffff",
+      transparent: true,
+      side: THREE.DoubleSide,
+    }),
+    back: new THREE.MeshPhongMaterial({
+      color: "#ffffff",
+      transparent: true,
+      side: THREE.DoubleSide,
+    }),
+  });
+
+  // Get texture URLs using Vite's import.meta.glob
   const frontTextureUrl = useMemo(() => {
     const suitLetter = suit.charAt(0).toUpperCase();
     const valueNumber =
-      value === "A"
-        ? "1"
-        : value === "J"
-        ? "11"
-        : value === "Q"
-        ? "12"
-        : value === "K"
-        ? "13"
-        : value;
-    return `/src/assets/playingCardFaces/${suitLetter}-${valueNumber}.svg`;
+      value === "A" ? "1" :
+      value === "J" ? "11" :
+      value === "Q" ? "12" :
+      value === "K" ? "13" :
+      value;
+
+    const fileName = `${suitLetter}-${valueNumber}.svg`;
+    const cardFaces = import.meta.glob('../../../assets/playingCardFaces/*.svg', { as: 'url', eager: true });
+    return cardFaces[`../../../assets/playingCardFaces/${fileName}`] || '';
   }, [suit, value]);
 
   const backTextureUrl = useMemo(() => {
-    return `/src/assets/playingCardBacks/RED_BACK.svg`;
+    const fileName = 'RED_BACK.svg';
+    const cardBacks = import.meta.glob('../../../assets/playingCardBacks/*.svg', { as: 'url', eager: true });
+    return cardBacks[`../../../assets/playingCardBacks/${fileName}`] || '';
   }, []);
 
-  // Load textures using useLoader
+  // Load textures using useLoader with error handling
   const [frontTexture, backTexture] = useLoader(THREE.TextureLoader, [
     frontTextureUrl,
     backTextureUrl,
-  ]);
+  ].filter(Boolean), (loader) => {
+    loader.setCrossOrigin('anonymous');
+  });
 
-  // Configure textures
-  useMemo(() => {
+  // Configure textures once when they load
+  useEffect(() => {
     if (frontTexture) {
-      frontTexture.needsUpdate = true;
+      materialsRef.current.front.map = frontTexture;
+      materialsRef.current.front.needsUpdate = true;
+    } else {
+      console.warn('Front texture could not be loaded');
     }
+    
     if (backTexture) {
-      backTexture.needsUpdate = true;
+      materialsRef.current.back.map = backTexture;
+      materialsRef.current.back.needsUpdate = true;
+    } else {
+      console.warn('Back texture could not be loaded');
     }
   }, [frontTexture, backTexture]);
 
-  // Animation springs
-  const { hoverScale, rotationY } = useSpring({
-    hoverScale: isHovered ? 1.1 : 1,
-    rotationY: isFlipped ? Math.PI : 0,
-    config: { mass: 1, tension: 170, friction: 26 },
-  });
+  // Update material properties when needed
+  useEffect(() => {
+    materialsRef.current.front.color.set(isSelected ? "#ffeb3b" : "#ffffff");
+    materialsRef.current.front.needsUpdate = true;
+  }, [isSelected]);
 
-  // Create materials
+  // Return reusable materials
   const materials = useMemo(() => {
-    const darkMaterial = new THREE.MeshPhongMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.DoubleSide,
-    });
-
-    const frontMaterial = new THREE.MeshPhongMaterial({
-      color: isSelected ? "#ffeb3b" : "#ffffff",
-      map: frontTexture,
-      transparent: true,
-      shininess: 40,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.DoubleSide,
-    });
-
-    const backMaterial = new THREE.MeshPhongMaterial({
-      color: "#ffffff",
-      map: backTexture,
-      transparent: true,
-      shininess: 40,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.DoubleSide,
-    });
-
     return [
-      darkMaterial, // left
-      darkMaterial, // right
-      darkMaterial, // top
-      darkMaterial, // bottom
-      frontMaterial, // front
-      backMaterial, // back
+      materialsRef.current.dark, // left
+      materialsRef.current.dark, // right
+      materialsRef.current.dark, // top
+      materialsRef.current.dark, // bottom
+      materialsRef.current.front, // front
+      materialsRef.current.back, // back
     ];
-  }, [frontTexture, backTexture, isSelected]);
+  }, []);
 
   const handlePointerOver = () => {
     if (!isInteractive) return;
-    setIsHovered(true);
     setHoveredCard({
       id,
       suit,
@@ -134,7 +135,6 @@ export function Card({
 
   const handlePointerOut = () => {
     if (!isInteractive) return;
-    setIsHovered(false);
     setHoveredCard(null);
     onHover?.(false);
   };
@@ -154,19 +154,16 @@ export function Card({
   };
 
   return (
-    <animated.group
+    <group
       ref={group}
       position={position}
       rotation={rotation}
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
-      scale={hoverScale}
     >
-      <animated.mesh
-        // castShadow
-        // receiveShadow
-        rotation-y={rotationY}
+      <mesh
+        rotation-y={isFlipped ? Math.PI : 0}
         geometry={
           new THREE.BoxGeometry(
             CARD_DIMENSIONS.width,
@@ -176,6 +173,6 @@ export function Card({
         }
         material={materials}
       />
-    </animated.group>
+    </group>
   );
 }

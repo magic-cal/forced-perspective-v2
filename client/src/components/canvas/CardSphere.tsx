@@ -81,7 +81,6 @@ export function CardSphere({
             suit={card.suit}
             value={card.value}
             isFlipped={false}
-            isInteractive={true}
           />
         </group>
       );

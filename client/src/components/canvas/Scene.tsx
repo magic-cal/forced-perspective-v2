@@ -10,6 +10,7 @@ import { CARD_DIMENSIONS } from "./Card/types";
 import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
+import { LandmarksScene } from "./LandmarksScene";
 
 interface CardState {
   position: [number, number, number];
@@ -40,7 +41,7 @@ function AnimatedCard({
       position={position as unknown as THREE.Vector3}
       rotation={rotation as unknown as THREE.Euler}
     >
-      <Card {...cardProps} isInteractive={false} />
+      <Card id={""} {...cardProps} isInteractive={false} />
     </animated.group>
   );
 }
@@ -48,6 +49,9 @@ function AnimatedCard({
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
+  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks">(
+    "cards"
+  );
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
@@ -113,18 +117,24 @@ export function Scene() {
       />
       <DeviceOrientationControls enabled={isDeviceMovementEnabled} />
 
-      {/* <group position={[0, 0, 0]} onClick={handleDeckClick}>
-        {deck.map((card, index) => (
-          <AnimatedCard
-            key={`${card.suit}-${card.value}-${index}`}
-            {...card}
-            finalPosition={getFinalPosition(card.suit, card.value, index)}
-            isSpread={isSpread}
-          />
-        ))}
-      </group> */}
+      {currentScene === "cards" ? (
+        <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
+      ) : (
+        <LandmarksScene />
+      )}
 
-      <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
+      {/* Scene switcher button */}
+      <mesh
+        position={[0, -10, 0]}
+        onClick={() =>
+          setCurrentScene(currentScene === "cards" ? "landmarks" : "cards")
+        }
+      >
+        <boxGeometry args={[2, 0.5, 0.5]} />
+        <meshStandardMaterial
+          color={currentScene === "cards" ? "#ff4444" : "#44ff44"}
+        />
+      </mesh>
     </>
   );
 }
