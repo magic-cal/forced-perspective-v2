@@ -1,20 +1,20 @@
+import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
 import { OrbitControls, Preload } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { Environment } from "./Environment";
+import PanoramaViewer from "../PanoramaViewer";
+import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
-import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
-import { LandmarksScene } from "./LandmarksScene";
-import { CardDeck } from "./CardDeck";
+import { Environment } from "./Environment";
 
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
-  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck">(
-    "card-deck"
-  );
+  const [currentScene, setCurrentScene] = useState<
+    "cards" | "landmarks" | "card-deck"
+  >("card-deck");
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
@@ -32,7 +32,9 @@ export function Scene() {
   return (
     <>
       <Preload all />
-      <Environment preset="sunset" intensity={1} blur={0.65} />
+      {currentScene === "landmarks" ? null : (
+        <Environment preset="sunset" intensity={1} blur={0.65} />
+      )}
       <OrbitControls
         makeDefault
         minPolarAngle={0}
@@ -51,7 +53,7 @@ export function Scene() {
       ) : currentScene === "cards" ? (
         <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
       ) : (
-        <LandmarksScene />
+        <PanoramaViewer />
       )}
 
       {/* Scene switcher button */}
