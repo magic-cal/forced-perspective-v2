@@ -8,16 +8,19 @@ import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
+import { useCameraSync } from "@/hooks/useCameraSync";
 
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
   const [currentScene, setCurrentScene] = useState<
     "cards" | "landmarks" | "card-deck"
-  >("card-deck");
+  >("cards");
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
+
+  useCameraSync();
 
   useEffect(() => {
     camera.position.set(0, 0, 0);
@@ -57,7 +60,7 @@ export function Scene() {
       )}
 
       {/* Scene switcher button */}
-      <mesh
+      {/* <mesh
         position={[0, -10, 0]}
         onClick={() =>
           setCurrentScene(currentScene === "cards" ? "landmarks" : "cards")
@@ -67,7 +70,7 @@ export function Scene() {
         <meshStandardMaterial
           color={currentScene === "cards" ? "#ff4444" : "#44ff44"}
         />
-      </mesh>
+      </mesh> */}
     </>
   );
 }

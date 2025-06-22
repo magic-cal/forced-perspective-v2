@@ -42,6 +42,11 @@ export class SocketEventService {
     this.socket.on("disconnect", () => {
       console.log("socket disconnected");
     });
+
+    this.socket.on("test-echo", (msg) => {
+      console.log("[server] Received test-echo:", msg);
+      this.socket.emit("test-echo-response", "Echo: " + msg);
+    });
   }
 
   addEventListener<T>(event: SocketEvent, callback: SocketEventCallback<T>) {
