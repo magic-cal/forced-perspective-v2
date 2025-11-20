@@ -9,6 +9,9 @@ import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
 import { useCameraSync } from "@/hooks/useCameraSync";
+import { useCameraAnimation } from "@/hooks/useCameraAnimation";
+import { useGameStore } from "@/store/gameStore";
+import { useSocket } from "@/sockets/SocketProvider";
 
 export function Scene() {
   const { camera, gl } = useThree();
@@ -20,8 +23,40 @@ export function Scene() {
     (state) => state.isEnabled
   );
 
-  useCameraSync();
+  const role = useGameStore((s) => s.role);
+  const socket = useSocket();
 
+  // Initialize camera sync - always enabled
+  useCameraSync({ enabled: true });
+
+  // Initialize camera animation
+  const { startAnimation } = useCameraAnimation();
+
+  // Start animation for audience after a delay
+  useEffect(() => {
+    if (!socket || role !== "audience") return;
+
+    const handleStartAnimation = () => {
+      console.log("Starting camera animation for audience");
+      startAnimation({
+        duration: 3000,
+        radius: 5,
+        height: 2,
+        target: [0, 0, 0],
+      }).catch(console.error);
+    };
+
+    // Start animation after 5 seconds
+    const timer = setTimeout(handleStartAnimation, 5000);
+
+    // Cleanup
+    return () => {
+      clearTimeout(timer);
+      socket.off("start-animation", handleStartAnimation);
+    };
+  }, [role, socket, startAnimation]);
+
+  // Initialize scene
   useEffect(() => {
     camera.position.set(0, 0, 0);
     gl.shadowMap.enabled = true;

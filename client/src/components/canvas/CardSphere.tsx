@@ -20,6 +20,22 @@ function shuffleArray<T>(array: T[]): T[] {
   return newArray;
 }
 
+// Deterministic Fisher-Yates shuffle using a seeded RNG
+function deterministicShuffleArray<T>(array: T[], seed: number): T[] {
+  // Simple LCG (Linear Congruential Generator)
+  function seededRandom() {
+    // LCG constants
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  }
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(seededRandom() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+}
+
 export function CardSphere({
   radius = 15,
   maxCardsPerRow = 48,
@@ -36,7 +52,7 @@ export function CardSphere({
         deck.push({ suit, value });
       }
     }
-    return shuffleArray(deck);
+    return deterministicShuffleArray(deck, 111111);
   }, []);
 
   // Calculate spacing based on card dimensions
