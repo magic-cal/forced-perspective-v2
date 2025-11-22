@@ -8,6 +8,7 @@ interface CameraUnlinkOptions {
   sphereRadius?: number;
   animationDuration?: number;
   onComplete?: () => void;
+  useCircularArc?: boolean; // Enable circular arc movement
 }
 
 // Easing function: easeInOutQuad
@@ -15,11 +16,45 @@ function easeInOutQuad(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
+// Calculate camera position along circular arc
+function calculateCameraArcMovement(
+  progress: number,
+  startPosition: THREE.Vector3,
+  sphereRadius: number
+): { position: THREE.Vector3; lookAt: THREE.Vector3 } {
+  // Define fulcrum point on sphere edge (at spectator's eye level, Y=0)
+  const fulcrumPoint = new THREE.Vector3(sphereRadius, 0, 0);
+  
+  // Calculate arc center and radius
+  const arcCenter = fulcrumPoint.clone();
+  const arcRadius = startPosition.distanceTo(arcCenter);
+  
+  // Calculate start and end angles in the XZ plane
+  const startAngle = Math.atan2(
+    startPosition.z - arcCenter.z,
+    startPosition.x - arcCenter.x
+  );
+  const endAngle = startAngle + Math.PI; // 180° rotation
+  
+  // Interpolate angle based on progress
+  const currentAngle = startAngle + (endAngle - startAngle) * progress;
+  
+  // Calculate new camera position on arc
+  const newPosition = new THREE.Vector3(
+    arcCenter.x + arcRadius * Math.cos(currentAngle),
+    startPosition.y, // Maintain Y position
+    arcCenter.z + arcRadius * Math.sin(currentAngle)
+  );
+  
+  return { position: newPosition, lookAt: fulcrumPoint };
+}
+
 export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
   const {
     sphereRadius = TRICK_CONFIG.CAMERA.sphereRadius,
     animationDuration = TRICK_CONFIG.ANIMATION_DURATIONS.cameraUnlink,
     onComplete,
+    useCircularArc = true, // Default to circular arc movement
   } = options;
 
   const { camera } = useThree();
@@ -30,6 +65,7 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     startRotation: THREE.Euler;
     targetPosition: THREE.Vector3;
     targetRotation: THREE.Euler;
+    useCircularArc: boolean;
   } | null>(null);
 
   // Animation frame handler
@@ -40,18 +76,30 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const progress = Math.min(elapsed / animationDuration, 1);
     const easedProgress = easeInOutQuad(progress);
 
-    // Interpolate position
-    camera.position.lerpVectors(
-      animationRef.current.startPosition,
-      animationRef.current.targetPosition,
-      easedProgress
-    );
+    if (animationRef.current.useCircularArc) {
+      // Use circular arc movement
+      const { position, lookAt } = calculateCameraArcMovement(
+        easedProgress,
+        animationRef.current.startPosition,
+        sphereRadius
+      );
+      
+      camera.position.copy(position);
+      camera.lookAt(lookAt);
+    } else {
+      // Use linear interpolation (legacy behavior)
+      camera.position.lerpVectors(
+        animationRef.current.startPosition,
+        animationRef.current.targetPosition,
+        easedProgress
+      );
 
-    // Interpolate rotation
-    const startQuat = new THREE.Quaternion().setFromEuler(animationRef.current.startRotation);
-    const targetQuat = new THREE.Quaternion().setFromEuler(animationRef.current.targetRotation);
-    const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, easedProgress);
-    camera.quaternion.copy(currentQuat);
+      // Interpolate rotation
+      const startQuat = new THREE.Quaternion().setFromEuler(animationRef.current.startRotation);
+      const targetQuat = new THREE.Quaternion().setFromEuler(animationRef.current.targetRotation);
+      const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, easedProgress);
+      camera.quaternion.copy(currentQuat);
+    }
 
     // Check if animation is complete
     if (progress >= 1) {
@@ -102,6 +150,7 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
       startRotation,
       targetPosition,
       targetRotation,
+      useCircularArc,
     };
 
     setIsAnimating(true);

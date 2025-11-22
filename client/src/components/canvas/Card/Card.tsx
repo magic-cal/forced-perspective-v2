@@ -2,7 +2,7 @@ import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
-import { FlipState, ForcedValue } from "./types";
+import { FlipState, ForcedValue, ViewType } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
 import { useTrickStore } from "@/store/useTrickStore";
 import { useSocket } from "@/sockets/SocketProvider";
@@ -24,6 +24,7 @@ export interface CardProps {
   isHighlighted?: boolean;
   flipState?: FlipState;
   disableInternalRotation?: boolean; // Disable mesh rotation when parent handles it
+  viewType?: ViewType; // Determines if card backs should be transparent (audience view)
 }
 
 export function Card({
@@ -41,6 +42,7 @@ export function Card({
   isHighlighted = false,
   flipState = 'face-up',
   disableInternalRotation = false,
+  viewType = 'participant',
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   const { setSelectedCard: setLegacySelectedCard, setHoveredCard } = useCardSelectionStore();
@@ -52,6 +54,9 @@ export function Card({
   const displayValue = forcedValue?.value ?? value;
 
   // Create reusable materials
+  // Card backs are transparent only for audience view to see head movement
+  const backOpacity = viewType === 'audience' ? 0.7 : 1.0;
+  
   const materialsRef = useRef<{
     dark: THREE.MeshPhongMaterial;
     front: THREE.MeshPhongMaterial;
@@ -65,12 +70,13 @@ export function Card({
     front: new THREE.MeshPhongMaterial({
       color: "#ffffff",
       transparent: true,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
     }),
     back: new THREE.MeshPhongMaterial({
       color: "#ffffff",
       transparent: true,
-      side: THREE.DoubleSide,
+      opacity: backOpacity,
+      side: THREE.FrontSide,
     }),
   });
 
@@ -129,6 +135,13 @@ export function Card({
     materialsRef.current.front.emissiveIntensity = shouldHighlight ? 0.5 : 0;
     materialsRef.current.front.needsUpdate = true;
   }, [isSelected, isHighlighted]);
+  
+  // Update back material opacity based on viewType
+  useEffect(() => {
+    const backOpacity = viewType === 'audience' ? 0.5 : 1.0;
+    materialsRef.current.back.opacity = backOpacity;
+    materialsRef.current.back.needsUpdate = true;
+  }, [viewType]);
   
   // Determine flip rotation based on flipState and viewType
   const flipRotation = useMemo(() => {

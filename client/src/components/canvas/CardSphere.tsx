@@ -88,9 +88,13 @@ export function CardSphere({
     animationStartTimeRef.current = currentTime;
   };
   
-  // Trigger flip animation when entering cards-flipping state
+  // Trigger flip animation when entering cards-flipping or final-flip state
   useEffect(() => {
-    if (trickState === 'cards-flipping' && animatingCardIndices.size === 0 && totalCardCount > 0) {
+    if ((trickState === 'cards-flipping' || trickState === 'final-flip') && animatingCardIndices.size === 0 && totalCardCount > 0) {
+      // Reset flipped cards for final flip
+      if (trickState === 'final-flip') {
+        setFlippedCardIndices(new Set());
+      }
       startFlipAnimation();
     }
   }, [trickState, totalCardCount]);
@@ -161,20 +165,36 @@ export function CardSphere({
       
       let cardFlipped: boolean;
       if (trickState === 'setup') {
-        // All cards show backs initially
-        cardFlipped = true;
-      } else if (trickState === 'cards-flipping') {
-        // Cards that have been animated show faces, others show backs
-        cardFlipped = !hasBeenFlipped;
-      } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection') {
-        // All cards show faces
+        // All cards show faces initially
         cardFlipped = false;
+      } else if (trickState === 'cards-flipping') {
+        // For spectator: cards that have been animated show backs
+        // For audience: cards remain showing faces
+        if (viewType === 'participant') {
+          cardFlipped = hasBeenFlipped;
+        } else {
+          cardFlipped = false;
+        }
+      } else if (trickState === 'final-flip') {
+        // Final flip: both views flip
+        // For spectator: flip from backs to faces (reverse)
+        // For audience: flip from faces to backs (first flip)
+        if (viewType === 'participant') {
+          // Spectator had backs showing, now show faces after final flip
+          cardFlipped = !hasBeenFlipped;
+        } else {
+          // Audience had faces showing, now show backs after final flip
+          cardFlipped = hasBeenFlipped;
+        }
+      } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection') {
+        // All cards show faces (or backs for spectator after flip)
+        cardFlipped = viewType === 'participant' && hasBeenFlipped;
       } else if (trickState === 'lock-and-reveal') {
         // Revealed card shows face, others show faces too
-        cardFlipped = false;
+        cardFlipped = viewType === 'participant' && hasBeenFlipped;
       } else {
-        // Default: show backs
-        cardFlipped = true;
+        // Default: show faces
+        cardFlipped = false;
       }
       
       // Apply forced card value if this is the selected card in lock-and-reveal state
@@ -199,6 +219,7 @@ export function CardSphere({
             isInteractive={trickState === 'participant-selection' && viewType === 'participant'}
             forcedValue={cardForcedValue}
             disableInternalRotation={true}
+            viewType={viewType}
           />
         </group>
       );
@@ -215,23 +236,39 @@ export function CardSphere({
     setTotalCardCount(cardIndex);
   }
 
-  // Helper function to calculate inward-facing orientation (back visible from center)
+  // Helper function to determine if flip should apply for current view
+  const shouldFlipForView = (currentViewType: ViewType, currentTrickState: TrickState): boolean => {
+    // Final flip applies to both views
+    if (currentTrickState === 'final-flip') return true;
+    
+    // During cards-flipping, only spectator/participant view flips
+    if (currentTrickState === 'cards-flipping') return currentViewType === 'participant';
+    
+    return false;
+  };
+
+  // Helper function to calculate inward-facing orientation (face visible from center)
   const calculateInwardOrientation = (cardGroup: THREE.Group) => {
     const centerPosition = new THREE.Vector3(0, 0, 0);
     
     // Make card face inward (toward center)
     cardGroup.lookAt(centerPosition);
     
-    // Apply 180° Y-axis rotation so back texture is visible from center
-    cardGroup.rotateY(Math.PI);
+    // No additional rotation - cards show faces to viewers at center
   };
 
   // Animate card flip with three phases: forward, rotate, return
   const animateCardFlip = (
     cardIndex: number, 
     elapsedTime: number, 
-    cardWorldPos: THREE.Vector3
+    cardWorldPos: THREE.Vector3,
+    currentViewType: ViewType
   ): { positionOffset: THREE.Vector3; rotationProgress: number; isComplete: boolean } => {
+    // Skip animation for audience during main flip
+    if (currentViewType === 'audience' && trickState === 'cards-flipping') {
+      return { positionOffset: new THREE.Vector3(0, 0, 0), rotationProgress: 0, isComplete: false };
+    }
+    
     const flipDuration = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
       ? TRICK_CONFIG.PERFORMANCE.lowPerf.animationDurations.cardFlip 
       : TRICK_CONFIG.ANIMATION_DURATIONS.cardFlip;
@@ -299,12 +336,13 @@ export function CardSphere({
           const isAnimating = animatingCardIndices.has(currentCardIndex);
           const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
           
-          if (isAnimating && trickState === 'cards-flipping') {
+          if (isAnimating && shouldFlipForView(viewType, trickState)) {
             // Apply flip animation
             const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
               currentCardIndex, 
               currentTime, 
-              cardWorldPos
+              cardWorldPos,
+              viewType
             );
             
             // Apply position offset (relative to base position)
@@ -334,12 +372,32 @@ export function CardSphere({
               completedCount++;
             }
             
-            cardGroup.userData.isFlipped = false; // Show face after flip
-          } else if (hasBeenFlipped || (trickState !== 'setup' && trickState !== 'cards-flipping')) {
-            // Post-flip state: cards have been flipped, so they face outward with faces visible
-            // Start with inward orientation, then add the full 180° flip
+            // Update isFlipped based on view and state
+            if (trickState === 'final-flip') {
+              cardGroup.userData.isFlipped = viewType === 'audience'; // Audience shows backs, spectator shows faces
+            } else {
+              cardGroup.userData.isFlipped = viewType === 'participant'; // Show back after flip for spectator
+            }
+          } else if (hasBeenFlipped && viewType === 'participant' && trickState !== 'final-flip') {
+            // Post-flip state for spectator (before final flip): cards have been flipped, so they show backs
+            // Start with face-forward orientation, then add the full 180° flip
             calculateInwardOrientation(cardGroup as THREE.Group);
-            cardGroup.rotateY(Math.PI); // Add the full flip rotation
+            cardGroup.rotateY(Math.PI); // Add the full flip rotation to show backs
+            cardGroup.userData.isFlipped = true;
+          } else if (hasBeenFlipped && trickState === 'final-flip') {
+            // Final flip completed state
+            calculateInwardOrientation(cardGroup as THREE.Group);
+            if (viewType === 'audience') {
+              // Audience: flip from faces to backs
+              cardGroup.rotateY(Math.PI);
+              cardGroup.userData.isFlipped = true;
+            } else {
+              // Spectator: flip from backs to faces (no additional rotation needed)
+              cardGroup.userData.isFlipped = false;
+            }
+          } else if (viewType === 'audience' && (trickState !== 'setup' && trickState !== 'cards-flipping' && trickState !== 'final-flip')) {
+            // Audience view: cards remain face-forward (no flip during main trick)
+            calculateInwardOrientation(cardGroup as THREE.Group);
             cardGroup.userData.isFlipped = false;
             
             // Reset position to base
@@ -348,9 +406,9 @@ export function CardSphere({
               cardGroup.position.copy(basePosition);
             }
           } else {
-            // Initial state: inward-facing
+            // Initial state: face-forward (faces visible from center)
             calculateInwardOrientation(cardGroup as THREE.Group);
-            cardGroup.userData.isFlipped = true;
+            cardGroup.userData.isFlipped = false;
           }
         });
       });

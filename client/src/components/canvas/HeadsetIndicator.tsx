@@ -9,11 +9,13 @@ interface HeadsetIndicatorProps {
 
 export function HeadsetIndicator({ position, rotation, visible }: HeadsetIndicatorProps) {
   const groupRef = useRef<THREE.Group>(null);
+  
+  const headsetScale = 10;
 
   if (!visible) return null;
 
   return (
-    <group ref={groupRef} position={position} rotation={rotation}>
+    <group ref={groupRef} position={position} rotation={rotation} scale={[headsetScale, headsetScale, headsetScale]}>
       {/* Main body - a box representing the headset */}
       <mesh position={[0, 0, 0]}>
         <boxGeometry args={[0.4, 0.3, 0.2]} />

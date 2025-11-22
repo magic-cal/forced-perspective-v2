@@ -3,7 +3,8 @@ export type TrickState =
   | 'cards-flipping'
   | 'unlink-and-rotate'
   | 'participant-selection'
-  | 'lock-and-reveal';
+  | 'lock-and-reveal'
+  | 'final-flip';
 
 export type ViewType = 'participant' | 'audience';
 
