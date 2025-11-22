@@ -1,10 +1,14 @@
 import express from "express";
-import SocketManager, { EventListener } from "./socketManager";
 import { createServer, Server as HttpServer } from "http";
+import SocketManager, { EventListener } from "./socketManager";
 import {
-  CameraChangedEvent,
-  CameraChangedEventData,
   MouseDownEventData,
+  CameraChangedEventData,
+  TrickStateChangedEventData,
+  CardSelectedEventData,
+  CardForcedEventData,
+  UnlinkTriggeredEventData,
+  ParticipantRotationEventData,
 } from "../../shared/socketEvents";
 
 export class ForcedPerspectiveServer {
@@ -47,6 +51,41 @@ export class ForcedPerspectiveServer {
         callback: (data: CameraChangedEventData, broadcast) => {
           console.log("[server](camera-changed): %s", JSON.stringify(data));
           broadcast("camera-changed", data);
+        },
+      },
+      {
+        event: "trick-state-changed",
+        callback: (data: TrickStateChangedEventData, broadcast) => {
+          console.log("[server](trick-state-changed): %s", JSON.stringify(data));
+          broadcast("trick-state-changed", data);
+        },
+      },
+      {
+        event: "card-selected",
+        callback: (data: CardSelectedEventData, broadcast) => {
+          console.log("[server](card-selected): %s", JSON.stringify(data));
+          broadcast("card-selected", data);
+        },
+      },
+      {
+        event: "card-forced",
+        callback: (data: CardForcedEventData, broadcast) => {
+          console.log("[server](card-forced): %s", JSON.stringify(data));
+          broadcast("card-forced", data);
+        },
+      },
+      {
+        event: "unlink-triggered",
+        callback: (data: UnlinkTriggeredEventData, broadcast) => {
+          console.log("[server](unlink-triggered): %s", JSON.stringify(data));
+          broadcast("unlink-triggered", data);
+        },
+      },
+      {
+        event: "participant-rotation",
+        callback: (data: ParticipantRotationEventData, broadcast) => {
+          // Don't log this one as it's high frequency
+          broadcast("participant-rotation", data);
         },
       },
     ];

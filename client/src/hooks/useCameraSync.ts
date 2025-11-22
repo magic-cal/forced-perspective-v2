@@ -14,6 +14,10 @@ type CameraSyncOptions = {
   enabled?: boolean;
   /** Throttle interval in ms for camera updates */
   throttleMs?: number;
+  /** Whether the camera is unlinked (disables sync for audience) */
+  isUnlinked?: boolean;
+  /** View type to determine sync behavior */
+  viewType?: 'participant' | 'audience';
 };
 
 /**
@@ -21,11 +25,14 @@ type CameraSyncOptions = {
  * @returns Methods to control camera syncing
  */
 export function useCameraSync(options: CameraSyncOptions = {}) {
-  const { enabled = true, throttleMs = 50 } = options;
+  const { enabled = true, throttleMs = 50, isUnlinked = false, viewType } = options;
   const { camera, gl } = useThree();
   const socket = useSocket();
   const role = useGameStore((s) => s.role);
   const isSubscribed = useRef(false);
+  
+  // Determine effective view type from role if not explicitly provided
+  const effectiveViewType = viewType ?? (role === 'spectator' ? 'participant' : 'audience');
 
   // Throttled camera update function
   const updateCamera = useCallback((data: CameraState) => {
@@ -35,7 +42,8 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
 
   // Handle camera updates from socket
   useEffect(() => {
-    if (!socket || role !== 'audience' || !enabled) {
+    // Don't sync if unlinked and we're the audience
+    if (!socket || role !== 'audience' || !enabled || (isUnlinked && effectiveViewType === 'audience')) {
       return;
     }
 
@@ -64,11 +72,11 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
         isSubscribed.current = false;
       }
     };
-  }, [socket, role, enabled, updateCamera]);
+  }, [socket, role, enabled, isUnlinked, effectiveViewType, updateCamera]);
 
-  // Broadcast camera updates (spectator only)
+  // Broadcast camera updates (spectator/participant only)
   useEffect(() => {
-    if (!socket || role !== 'spectator' || !enabled) {
+    if (!socket || role !== 'spectator' || !enabled || effectiveViewType !== 'participant') {
       return;
     }
 
@@ -105,7 +113,7 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
       gl.domElement.removeEventListener('pointermove', throttledUpdate);
       throttledUpdate.cancel();
     };
-  }, [camera, gl, role, socket, enabled, throttleMs]);
+  }, [camera, gl, role, socket, enabled, throttleMs, effectiveViewType]);
 
   // Cleanup on unmount or when syncing is disabled
   useEffect(() => {

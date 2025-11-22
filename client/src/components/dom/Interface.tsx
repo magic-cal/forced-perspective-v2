@@ -1,9 +1,20 @@
 import { useEffect, useState } from "react";
 import { useUserRole } from "@/store/gameStore";
+import { debug } from "@/config/debug";
 
 export function Interface() {
   const [isConnected, setIsConnected] = useState(false);
   const [role, setRole] = useUserRole();
+
+  useEffect(() => {
+    // Read role from URL parameter on mount
+    const url = new URLSearchParams(window.location.search);
+    const urlRole = url.get("role") as "magician" | "spectator" | "audience" | null;
+    if (urlRole) {
+      debug.store("Setting role from URL:", urlRole);
+      setRole(urlRole);
+    }
+  }, [setRole]);
 
   useEffect(() => {
     // Socket connection and room management will be implemented here

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
+import { debug } from "@/config/debug";
 
 const SocketContext = createContext<Socket | null>(null);
 
@@ -12,10 +13,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({
     const internalSocket = io("http://localhost:8080");
 
     internalSocket.on("connect", () => {
-      console.log("Socket connected", internalSocket);
+      debug.socket("Socket connected", internalSocket.id);
     });
     internalSocket.on("disconnect", () => {
-      console.log("Socket disconnected");
+      debug.socket("Socket disconnected");
     });
 
     setSocket(internalSocket);

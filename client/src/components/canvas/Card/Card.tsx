@@ -1,8 +1,11 @@
-import { useRef, useState, useMemo, useEffect } from "react";
+import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
+import { ViewType, FlipState, ForcedValue } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
+import { useTrickStore } from "@/store/useTrickStore";
+import { useSocket } from "@/sockets/SocketProvider";
 
 export interface CardProps {
   id: string;
@@ -15,6 +18,12 @@ export interface CardProps {
   isInteractive?: boolean;
   onClick?: () => void;
   onHover?: (isHovering: boolean) => void;
+  
+  // New props for trick functionality
+  viewType?: ViewType;
+  forcedValue?: ForcedValue;
+  isHighlighted?: boolean;
+  flipState?: FlipState;
 }
 
 export function Card({
@@ -28,9 +37,19 @@ export function Card({
   isInteractive = false,
   onClick,
   onHover,
+  viewType = 'participant',
+  forcedValue,
+  isHighlighted = false,
+  flipState = 'face-up',
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
-  const { setSelectedCard, setHoveredCard } = useCardSelectionStore();
+  const { setSelectedCard: setLegacySelectedCard, setHoveredCard } = useCardSelectionStore();
+  const { currentState, setSelectedCard, isSelectionLocked } = useTrickStore();
+  const socket = useSocket();
+  
+  // Determine actual card values (use forced value if provided)
+  const displaySuit = forcedValue?.suit ?? suit;
+  const displayValue = forcedValue?.value ?? value;
 
   // Create reusable materials
   const materialsRef = useRef<{
@@ -57,18 +76,18 @@ export function Card({
 
   // Get texture URLs using Vite's import.meta.glob
   const frontTextureUrl = useMemo(() => {
-    const suitLetter = suit.charAt(0).toUpperCase();
+    const suitLetter = displaySuit.charAt(0).toUpperCase();
     const valueNumber =
-      value === "A" ? "1" :
-      value === "J" ? "11" :
-      value === "Q" ? "12" :
-      value === "K" ? "13" :
-      value;
+      displayValue === "A" ? "1" :
+      displayValue === "J" ? "11" :
+      displayValue === "Q" ? "12" :
+      displayValue === "K" ? "13" :
+      displayValue;
 
     const fileName = `${suitLetter}-${valueNumber}.svg`;
     const cardFaces = import.meta.glob('../../../assets/playingCardFaces/*.svg', { as: 'url', eager: true });
     return cardFaces[`../../../assets/playingCardFaces/${fileName}`] || '';
-  }, [suit, value]);
+  }, [displaySuit, displayValue]);
 
   const backTextureUrl = useMemo(() => {
     const fileName = 'RED_BACK.svg';
@@ -103,9 +122,24 @@ export function Card({
 
   // Update material properties when needed
   useEffect(() => {
-    materialsRef.current.front.color.set(isSelected ? "#ffeb3b" : "#ffffff");
+    // Highlight selected or highlighted cards
+    const shouldHighlight = isSelected || isHighlighted;
+    materialsRef.current.front.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
     materialsRef.current.front.needsUpdate = true;
-  }, [isSelected]);
+  }, [isSelected, isHighlighted]);
+  
+  // Determine flip rotation based on flipState and viewType
+  const flipRotation = useMemo(() => {
+    // If flipState is explicitly set, use it
+    if (flipState === 'face-down') {
+      return Math.PI;
+    } else if (flipState === 'face-up') {
+      return 0;
+    }
+    
+    // Otherwise use isFlipped prop
+    return isFlipped ? Math.PI : 0;
+  }, [flipState, isFlipped]);
 
   // Return reusable materials
   const materials = useMemo(() => {
@@ -141,7 +175,34 @@ export function Card({
 
   const handleClick = () => {
     if (!isInteractive) return;
-    setSelectedCard({
+    
+    // Check if we're in the participant-selection state
+    if (currentState !== 'participant-selection') {
+      console.log('Card selection only allowed in participant-selection state');
+      return;
+    }
+    
+    // Check if selection is locked
+    if (isSelectionLocked) {
+      console.log('Selection is locked');
+      return;
+    }
+    
+    // Update selection in trick store
+    setSelectedCard(id);
+    
+    // Emit selection event to socket
+    if (socket) {
+      socket.emit('card-selected', {
+        cardId: id,
+        suit,
+        value,
+        timestamp: Date.now(),
+      });
+    }
+    
+    // Legacy selection store (for backwards compatibility)
+    setLegacySelectedCard({
       id,
       suit,
       value,
@@ -150,6 +211,7 @@ export function Card({
       isFlipped,
       isSelected,
     });
+    
     onClick?.();
   };
 
@@ -163,7 +225,7 @@ export function Card({
       onPointerOut={handlePointerOut}
     >
       <mesh
-        rotation-y={isFlipped ? Math.PI : 0}
+        rotation-y={flipRotation}
         geometry={
           new THREE.BoxGeometry(
             CARD_DIMENSIONS.width,

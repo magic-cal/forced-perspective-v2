@@ -3,15 +3,20 @@ import { OrbitControls, Preload } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect, useState } from "react";
 import * as THREE from "three";
+import { debug } from "@/config/debug";
 import PanoramaViewer from "../PanoramaViewer";
 import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
+import { HeadsetIndicator } from "./HeadsetIndicator";
 import { useCameraSync } from "@/hooks/useCameraSync";
 import { useCameraAnimation } from "@/hooks/useCameraAnimation";
+import { useCameraUnlink } from "@/hooks/useCameraUnlink";
 import { useGameStore } from "@/store/gameStore";
 import { useSocket } from "@/sockets/SocketProvider";
+import { useTrickStore } from "@/store/useTrickStore";
+import { TRICK_CONFIG } from "@/config/trick";
 
 export function Scene() {
   const { camera, gl } = useThree();
@@ -19,25 +24,87 @@ export function Scene() {
   const [currentScene, setCurrentScene] = useState<
     "cards" | "landmarks" | "card-deck"
   >("cards");
+  const [participantRotation, setParticipantRotation] = useState<[number, number, number]>([0, 0, 0]);
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
 
   const role = useGameStore((s) => s.role);
   const socket = useSocket();
+  const currentState = useTrickStore((s) => s.currentState);
+  const isUnlinked = useTrickStore((s) => s.isUnlinked);
+  const nextState = useTrickStore((s) => s.nextState);
+  const selectedCardId = useTrickStore((s) => s.selectedCardId);
+  
+  // Determine view type based on role
+  const viewType = role === 'spectator' ? 'participant' : 'audience';
 
-  // Initialize camera sync - always enabled
-  useCameraSync({ enabled: true });
+  // Initialize camera sync with unlink state
+  useCameraSync({ 
+    enabled: true,
+    isUnlinked,
+    viewType,
+  });
+  
+  // Initialize camera unlink animation
+  const { startUnlinkAnimation } = useCameraUnlink({
+    sphereRadius: TRICK_CONFIG.CAMERA.sphereRadius,
+    animationDuration: TRICK_CONFIG.ANIMATION_DURATIONS.cameraUnlink,
+    onComplete: () => {
+      debug.trick('Camera unlink complete, transitioning to next state');
+      nextState();
+    },
+  });
 
   // Initialize camera animation
   const { startAnimation } = useCameraAnimation();
 
-  // Start animation for audience after a delay
+  // Trigger unlink animation when entering unlink-and-rotate state
+  useEffect(() => {
+    if (currentState === 'unlink-and-rotate' && viewType === 'audience' && !isUnlinked) {
+      debug.trick('Triggering camera unlink animation for audience');
+      useTrickStore.setState({ isUnlinked: true });
+      startUnlinkAnimation().catch(debug.error);
+    }
+  }, [currentState, viewType, isUnlinked, startUnlinkAnimation]);
+  
+  // Track participant camera rotation for headset indicator
+  useEffect(() => {
+    if (!socket) return undefined;
+    
+    if (viewType === 'participant') {
+      // Broadcast rotation updates
+      const updateRotation = () => {
+        socket.emit('participant-rotation', {
+          x: camera.rotation.x,
+          y: camera.rotation.y,
+          z: camera.rotation.z,
+        });
+      };
+      
+      const interval = setInterval(updateRotation, 50);
+      return () => clearInterval(interval);
+    } else if (viewType === 'audience') {
+      // Listen for rotation updates
+      const handleRotationUpdate = (rotation: { x: number; y: number; z: number }) => {
+        setParticipantRotation([rotation.x, rotation.y, rotation.z]);
+      };
+      
+      socket.on('participant-rotation', handleRotationUpdate);
+      return () => {
+        socket.off('participant-rotation', handleRotationUpdate);
+      };
+    }
+    
+    return undefined;
+  }, [socket, viewType, camera]);
+
+  // Start animation for audience after a delay (legacy - can be removed if not needed)
   useEffect(() => {
     if (!socket || role !== "audience") return;
 
     const handleStartAnimation = () => {
-      console.log("Starting camera animation for audience");
+      debug.camera("Starting camera animation for audience");
       startAnimation({
         duration: 3000,
         radius: 5,
@@ -89,9 +156,25 @@ export function Scene() {
       {currentScene === "card-deck" ? (
         <CardDeck isSpread={isSpread} onDeckClick={handleDeckClick} />
       ) : currentScene === "cards" ? (
-        <CardSphere radius={15} maxCardsPerRow={48} rotationSpeed={0.02} />
+        <CardSphere 
+          radius={15} 
+          maxCardsPerRow={48} 
+          rotationSpeed={0.02}
+          viewType={viewType}
+          trickState={currentState}
+          selectedCardId={selectedCardId}
+        />
       ) : (
         <PanoramaViewer />
+      )}
+      
+      {/* Headset indicator - only visible to audience after unlink */}
+      {viewType === 'audience' && isUnlinked && (
+        <HeadsetIndicator
+          position={[0, 0, 0]}
+          rotation={participantRotation}
+          visible={true}
+        />
       )}
 
       {/* Scene switcher button */}

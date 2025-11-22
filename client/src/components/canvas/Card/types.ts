@@ -22,6 +22,20 @@ export interface CardData {
   rotation: [number, number, number];
   isFlipped: boolean;
   isSelected: boolean;
+  
+  // New fields for trick functionality
+  originalValue?: CardValue;
+  originalSuit?: CardSuit;
+  isForced?: boolean;
+  adjacentCardIds?: string[];
+}
+
+export type ViewType = 'participant' | 'audience';
+export type FlipState = 'face-up' | 'face-down' | 'animating';
+
+export interface ForcedValue {
+  suit: CardSuit;
+  value: CardValue;
 }
 
 export const CARD_DIMENSIONS = {

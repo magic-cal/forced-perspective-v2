@@ -1,23 +1,20 @@
-import { useFrame, useThree } from "@react-three/fiber";
-import { useRef, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useRef, useMemo, useEffect, useState } from "react";
 import * as THREE from "three";
 import { Card } from "./Card";
-import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES } from "./Card/types";
+import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES, ViewType, ForcedValue } from "./Card/types";
+import { TrickState } from "@/types/trick";
+import { useCardFlipAnimation } from "@/hooks/useCardFlipAnimation";
+import { useTrickStore } from "@/store/useTrickStore";
+import { FORCED_CARD } from "@/utils/cardForcing";
 
 interface CardSphereProps {
   radius?: number;
   maxCardsPerRow?: number;
   rotationSpeed?: number;
-}
-
-// Fisher-Yates shuffle algorithm
-function shuffleArray<T>(array: T[]): T[] {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
+  viewType?: ViewType;
+  trickState?: TrickState;
+  selectedCardId?: string | null;
 }
 
 // Deterministic Fisher-Yates shuffle using a seeded RNG
@@ -40,9 +37,16 @@ export function CardSphere({
   radius = 15,
   maxCardsPerRow = 48,
   rotationSpeed = 0.02,
+  viewType = 'participant',
+  trickState = 'setup',
+  selectedCardId = null,
 }: CardSphereProps) {
   const sphereRef = useRef<THREE.Group>(null);
-  const { camera } = useThree();
+  const [flippedCardIndices, setFlippedCardIndices] = useState<Set<number>>(new Set());
+  const [totalCardCount, setTotalCardCount] = useState(0);
+  const [forcedCardValue, setForcedCardValue] = useState<ForcedValue | null>(null);
+  const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
+  const { nextState, lockSelection } = useTrickStore();
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -54,9 +58,54 @@ export function CardSphere({
     }
     return deterministicShuffleArray(deck, 111111);
   }, []);
+  
+  // Initialize card flip animation
+  const { startFlipAnimation, getFlippedCards, isAnimating } = useCardFlipAnimation({
+    totalCards: totalCardCount,
+    onComplete: () => {
+      console.log('All cards flipped, transitioning to next state');
+      nextState();
+    },
+  });
+  
+  // Trigger flip animation when entering cards-flipping state
+  useEffect(() => {
+    if (trickState === 'cards-flipping' && !isAnimating && totalCardCount > 0) {
+      startFlipAnimation();
+    }
+  }, [trickState, isAnimating, totalCardCount, startFlipAnimation]);
+  
+  // Handle lock and reveal state
+  useEffect(() => {
+    if (trickState === 'lock-and-reveal' && selectedCardId) {
+      console.log('Locking selection and applying forced card');
+      
+      // Lock the selection
+      lockSelection();
+      
+      // Apply forced card value
+      setForcedCardValue(FORCED_CARD);
+      
+      // Set revealed card (this will trigger flip animation)
+      setRevealedCardId(selectedCardId);
+      
+      // Transition to next state after reveal animation (1.5 seconds)
+      setTimeout(() => {
+        console.log('Reveal complete');
+        // Could transition to next state or reset here
+      }, 1500);
+    }
+  }, [trickState, selectedCardId, lockSelection]);
+  
+  // Update flipped cards during animation
+  useFrame(() => {
+    if (isAnimating) {
+      const flipped = getFlippedCards(Date.now());
+      setFlippedCardIndices(flipped);
+    }
+  });
 
   // Calculate spacing based on card dimensions
-  const cardWidth = CARD_DIMENSIONS.width;
   const cardHeight = CARD_DIMENSIONS.height;
   const spacingFactor = 1.4;
 
@@ -88,15 +137,36 @@ export function CardSphere({
 
       // Get the next card from our shuffled deck
       const card = shuffledDeck[cardIndex % shuffledDeck.length];
+      const currentCardIndex = cardIndex;
       cardIndex++;
 
+      const cardId = `${card.suit}-${card.value}-${row}-${i}`;
+      const isSelected = cardId === selectedCardId;
+      const isRevealed = cardId === revealedCardId;
+      
+      // Determine if this card should be flipped based on animation state
+      const shouldBeFlipped = flippedCardIndices.has(currentCardIndex) || 
+                              trickState === 'unlink-and-rotate' || 
+                              trickState === 'participant-selection' ||
+                              (trickState === 'lock-and-reveal' && !isRevealed);
+      
+      // Apply forced card value if this is the selected card in lock-and-reveal state
+      const cardForcedValue = (isSelected && forcedCardValue) ? forcedCardValue : undefined;
+      
+      // Revealed card should show face (not flipped)
+      const cardFlipped = isRevealed ? false : shouldBeFlipped;
+      
       rowCards.push(
         <group key={`${row}-${i}`} position={[x, y + verticalOffset, z]}>
           <Card
-            id={`${card.suit}-${card.value}-${row}-${i}`}
+            id={cardId}
             suit={card.suit}
             value={card.value}
-            isFlipped={false}
+            isFlipped={cardFlipped}
+            viewType={viewType}
+            isHighlighted={isSelected}
+            isInteractive={trickState === 'participant-selection' && viewType === 'participant'}
+            forcedValue={cardForcedValue}
           />
         </group>
       );
@@ -107,9 +177,14 @@ export function CardSphere({
       </group>
     );
   }
+  
+  // Update total card count if it changed
+  if (totalCardCount !== cardIndex) {
+    setTotalCardCount(cardIndex);
+  }
 
   // Animate the rows and update card rotations
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (sphereRef.current) {
       // Rotate each row in alternating directions
       sphereRef.current.children.forEach((row, index) => {

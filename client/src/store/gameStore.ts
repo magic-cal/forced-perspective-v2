@@ -21,12 +21,8 @@ export const useGameStore = create<GameState>((set) => ({
 }));
 
 export function useUserRole() {
-  const url = new URLSearchParams(window.location.search);
-  const role = url.get("role") as UserRole | null;
-  if (role) {
-    console.log("Setting role from URL", role);
-    useGameStore.setState({ role });
-  }
+  const role = useGameStore((state) => state.role);
+  const setRole = useGameStore((state) => state.setRole);
 
-  return useGameStore((state) => [state.role, state.setRole] as const);
+  return [role, setRole] as const;
 }
