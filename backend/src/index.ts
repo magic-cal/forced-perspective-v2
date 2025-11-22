@@ -63,8 +63,9 @@ export class ForcedPerspectiveServer {
       {
         event: "trick-state-changed",
         callback: (data: TrickStateChangedEventData, broadcast) => {
-          console.log("[server](trick-state-changed): %s", JSON.stringify(data));
-          broadcast("trick-state-changed", data);
+          console.log("[server](trick-state-changed) RECEIVED: %s", JSON.stringify(data));
+          const result = broadcast("trick-state-changed", data);
+          console.log("[server](trick-state-changed) BROADCASTED to other clients:", result);
         },
       },
       {

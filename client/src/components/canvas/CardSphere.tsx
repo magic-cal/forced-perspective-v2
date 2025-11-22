@@ -207,15 +207,40 @@ export function CardSphere({
   useFrame((_state, delta) => {
     if (sphereRef.current) {
       // Rotate each row in alternating directions
+      let cardIndex = 0;
       sphereRef.current.children.forEach((row, index) => {
         const direction = index % 2 === 0 ? 1 : -1;
         row.rotation.y += effectiveRotationSpeed * direction * delta;
 
         row.children.forEach((cardGroup) => {
-          // Make card face the center
-          cardGroup.lookAt(new THREE.Vector3(0, 0, 0));
+          // Update isFlipped state based on current animation state
+          const currentCardIndex = cardIndex++;
+          const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
           
-          // Apply flip rotation AFTER lookAt if card is flipped
+          let shouldBeFlipped: boolean;
+          if (trickState === 'setup') {
+            shouldBeFlipped = true;
+          } else if (trickState === 'cards-flipping') {
+            shouldBeFlipped = !hasBeenFlipped;
+          } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection' || trickState === 'lock-and-reveal') {
+            shouldBeFlipped = false;
+          } else {
+            shouldBeFlipped = true;
+          }
+          
+          cardGroup.userData.isFlipped = shouldBeFlipped;
+          
+          // Get the card's world position
+          const cardWorldPos = new THREE.Vector3();
+          cardGroup.getWorldPosition(cardWorldPos);
+          
+          // Calculate direction from center to card (outward)
+          const outwardDirection = cardWorldPos.clone().normalize();
+          
+          // Make card face outward (toward spectator)
+          cardGroup.lookAt(cardWorldPos.clone().add(outwardDirection));
+          
+          // If card is flipped (showing back), rotate 180° so back faces spectator
           if (cardGroup.userData.isFlipped) {
             // Save the current quaternion from lookAt
             const lookAtQuaternion = cardGroup.quaternion.clone();

@@ -3,9 +3,13 @@ import { Interface } from "@/components/dom/Interface";
 import { Menu } from "@/components/dom/Menu";
 import { TrickControls } from "@/components/dom/TrickControls";
 import { useGameStore } from "@/store/gameStore";
+import { useTrickSync } from "@/hooks/useTrickSync";
 
 export default function App() {
   const role = useGameStore((s) => s.role);
+  
+  // Synchronize trick state across all clients
+  useTrickSync();
   
   return (
     <main className="app-container">
@@ -16,8 +20,8 @@ export default function App() {
       <Interface />
       <Menu />
       
-      {/* Trick Controls - Only visible to magician */}
-      {role === 'magician' && <TrickControls />}
+      {/* Trick Controls - Handles its own visibility */}
+      <TrickControls />
 
       <style>{`
         .app-container {

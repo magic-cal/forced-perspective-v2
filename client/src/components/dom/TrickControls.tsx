@@ -1,6 +1,7 @@
 import styled from 'styled-components';
 import { useTrickStore } from '@/store/useTrickStore';
 import { TrickState } from '@/types/trick';
+import { useGameStore } from '@/store/gameStore';
 
 const ControlsContainer = styled.div`
   position: fixed;
@@ -103,6 +104,7 @@ const STATE_LABELS: Record<TrickState, string> = {
 
 export function TrickControls() {
   const { currentState, nextState, resetTrick, selectedCardId } = useTrickStore();
+  const role = useGameStore((s) => s.role);
 
   const canProgress = () => {
     // Can't progress from lock-and-reveal (end state)
@@ -113,6 +115,11 @@ export function TrickControls() {
     
     return true;
   };
+
+  // Show controls for magician role
+  if (role !== 'magician') {
+    return null;
+  }
 
   return (
     <ControlsContainer>

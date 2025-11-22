@@ -31,87 +31,13 @@ export function Scene() {
 
   const role = useGameStore((s) => s.role);
   const socket = useSocket();
-  const currentState = useTrickStore((s) => s.currentState);
+  const currentState = useTrickStore ((s) => s.currentState);
   const isUnlinked = useTrickStore((s) => s.isUnlinked);
   const nextState = useTrickStore((s) => s.nextState);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   
   // Determine view type based on role
   const viewType = role === 'spectator' ? 'participant' : 'audience';
-
-  // Subscribe to Zustand store changes and broadcast via socket
-  useEffect(() => {
-    if (!socket) return;
-
-    const unsubscribe = useTrickStore.subscribe((state, prevState) => {
-      // Broadcast state changes
-      if (state.currentState !== prevState.currentState) {
-        debug.trick(`Broadcasting state change: ${state.currentState}`);
-        socket.emit('trick-state-changed', {
-          state: state.currentState,
-          timestamp: Date.now(),
-        });
-      }
-
-      // Broadcast unlink changes
-      if (state.isUnlinked !== prevState.isUnlinked && state.isUnlinked) {
-        debug.trick('Broadcasting unlink triggered');
-        socket.emit('unlink-triggered', {
-          timestamp: Date.now(),
-        });
-      }
-
-      // Broadcast card selection changes
-      if (state.selectedCardId !== prevState.selectedCardId && state.selectedCardId) {
-        debug.trick(`Broadcasting card selection: ${state.selectedCardId}`);
-        socket.emit('card-selected', {
-          cardId: state.selectedCardId,
-          suit: 'unknown', // Will be filled by actual card data
-          value: 'unknown',
-          timestamp: Date.now(),
-        });
-      }
-    });
-
-    return unsubscribe;
-  }, [socket]);
-
-  // Listen for state changes from other clients
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleStateChange = (data: { state: string; timestamp: number }) => {
-      debug.trick(`Received state change: ${data.state}`);
-      // Only update if different to prevent loops
-      if (useTrickStore.getState().currentState !== data.state) {
-        useTrickStore.setState({ currentState: data.state as any });
-      }
-    };
-
-    const handleUnlinkTriggered = () => {
-      debug.trick('Received unlink triggered');
-      if (!useTrickStore.getState().isUnlinked) {
-        useTrickStore.setState({ isUnlinked: true });
-      }
-    };
-
-    const handleCardSelected = (data: { cardId: string }) => {
-      debug.trick(`Received card selection: ${data.cardId}`);
-      if (useTrickStore.getState().selectedCardId !== data.cardId) {
-        useTrickStore.setState({ selectedCardId: data.cardId });
-      }
-    };
-
-    socket.on('trick-state-changed', handleStateChange);
-    socket.on('unlink-triggered', handleUnlinkTriggered);
-    socket.on('card-selected', handleCardSelected);
-
-    return () => {
-      socket.off('trick-state-changed', handleStateChange);
-      socket.off('unlink-triggered', handleUnlinkTriggered);
-      socket.off('card-selected', handleCardSelected);
-    };
-  }, [socket]);
 
   // Initialize camera sync with unlink state
   useCameraSync({ 

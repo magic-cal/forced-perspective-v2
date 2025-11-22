@@ -5,6 +5,7 @@ interface TrickStore {
   currentState: TrickState;
   nextState: () => void;
   resetTrick: () => void;
+  setState: (state: TrickState) => void;
 
   // State-specific data
   isUnlinked: boolean;
@@ -30,6 +31,15 @@ export const useTrickStore = create<TrickStore>((set, get) => ({
   isUnlinked: false,
   selectedCardId: null,
   isSelectionLocked: false,
+
+  setState: (state: TrickState) => {
+    set({ currentState: state });
+    
+    // Auto-unlock when entering participant-selection
+    if (state === 'participant-selection') {
+      set({ isSelectionLocked: false });
+    }
+  },
 
   nextState: () => {
     const { currentState } = get();

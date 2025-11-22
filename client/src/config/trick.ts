@@ -25,7 +25,7 @@ export const TRICK_CONFIG = {
 
   PERFORMANCE: {
     // Toggle for less resource-intensive rendering
-    lowPerformanceMode: true,
+    lowPerformanceMode: false,
     // Reduced settings for low performance mode
     lowPerf: {
       rotationSpeed: 0,
