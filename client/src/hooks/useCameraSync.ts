@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useSocket } from '@/sockets/SocketProvider';
 import { useGameStore } from '@/store/gameStore';
-import * as THREE from 'three';
 
 type CameraState = {
   position: { x: number; y: number; z: number };
@@ -50,25 +49,22 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     const handleCameraUpdate = (data: CameraState) => {
       if (!data) return;
       try {
+        console.log('[Camera Sync] Audience receiving camera update:', data);
         updateCamera(data);
       } catch (error) {
         console.error('Error updating camera:', error);
       }
     };
 
-    // Listen for both direct and broadcast updates
-    socket.off('camera-update');
-    socket.off('broadcast-camera-update');
-    
+    // Use single consistent event name
     socket.on('camera-update', handleCameraUpdate);
-    socket.on('broadcast-camera-update', handleCameraUpdate);
     
     isSubscribed.current = true;
+    console.log('[Camera Sync] Audience listening for camera updates');
 
     return () => {
       if (socket && isSubscribed.current) {
         socket.off('camera-update', handleCameraUpdate);
-        socket.off('broadcast-camera-update', handleCameraUpdate);
         isSubscribed.current = false;
       }
     };
@@ -96,21 +92,23 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
         },
       };
       
-      // Use a different event name for broadcasting to avoid echo
-      socket.emit('broadcast-camera-update', state);
+      console.log('[Camera Sync] Spectator broadcasting camera update:', state);
+      // Use consistent event name
+      socket.emit('camera-update', state);
     };
 
     // Throttle camera updates
     const throttledUpdate = throttle(handleCameraChange, throttleMs);
     
-    // Initial update
+    // Initial update immediately
+    console.log('[Camera Sync] Spectator starting camera broadcast');
     handleCameraChange();
     
-    // Update on pointer move
-    gl.domElement.addEventListener('pointermove', throttledUpdate);
+    // Set up continuous updates using useFrame-like behavior
+    const intervalId = setInterval(handleCameraChange, throttleMs);
     
     return () => {
-      gl.domElement.removeEventListener('pointermove', throttledUpdate);
+      clearInterval(intervalId);
       throttledUpdate.cancel();
     };
   }, [camera, gl, role, socket, enabled, throttleMs, effectiveViewType]);

@@ -54,6 +54,13 @@ export class ForcedPerspectiveServer {
         },
       },
       {
+        event: "camera-update",
+        callback: (data: any, broadcast) => {
+          // High frequency event - don't log
+          broadcast("camera-update", data);
+        },
+      },
+      {
         event: "trick-state-changed",
         callback: (data: TrickStateChangedEventData, broadcast) => {
           console.log("[server](trick-state-changed): %s", JSON.stringify(data));

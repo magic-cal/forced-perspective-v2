@@ -69,10 +69,23 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const startPosition = camera.position.clone();
     const startRotation = camera.rotation.clone();
 
-    // Calculate target position: on the edge of the sphere, opposite to current position
-    // We want to be at the same distance from center as the sphere radius
-    const currentDirection = startPosition.clone().normalize();
-    const targetPosition = currentDirection.clone().multiplyScalar(-sphereRadius);
+    // Calculate target position on XY plane at sphere edge
+    // Project current position onto XY plane
+    const xyPosition = new THREE.Vector2(startPosition.x, startPosition.y);
+    const xyDistance = xyPosition.length();
+    
+    // If we're at the center, use a default direction
+    const targetXY = xyDistance > 0.1 
+      ? xyPosition.normalize().multiplyScalar(-sphereRadius)
+      : new THREE.Vector2(sphereRadius, 0);
+    
+    // Maintain similar Z height to avoid going through sphere
+    // Use a small offset to ensure we're outside the sphere
+    const targetZ = Math.abs(startPosition.z) < 1 ? 1 : startPosition.z;
+    
+    const targetPosition = new THREE.Vector3(targetXY.x, targetXY.y, targetZ);
+    
+    debug.camera(`Unlink target position: ${targetPosition.x}, ${targetPosition.y}, ${targetPosition.z}`);
 
     // Calculate target rotation: looking at the center of the sphere
     const targetRotation = new THREE.Euler();

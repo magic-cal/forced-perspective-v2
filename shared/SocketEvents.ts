@@ -126,6 +126,7 @@ export class ParticipantRotationEvent implements ISocketEvent {
 export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
+  "camera-update": CameraChangedEvent,
   "trick-state-changed": TrickStateChangedEvent,
   "card-selected": CardSelectedEvent,
   "card-forced": CardForcedEvent,

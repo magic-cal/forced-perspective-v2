@@ -39,6 +39,80 @@ export function Scene() {
   // Determine view type based on role
   const viewType = role === 'spectator' ? 'participant' : 'audience';
 
+  // Subscribe to Zustand store changes and broadcast via socket
+  useEffect(() => {
+    if (!socket) return;
+
+    const unsubscribe = useTrickStore.subscribe((state, prevState) => {
+      // Broadcast state changes
+      if (state.currentState !== prevState.currentState) {
+        debug.trick(`Broadcasting state change: ${state.currentState}`);
+        socket.emit('trick-state-changed', {
+          state: state.currentState,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Broadcast unlink changes
+      if (state.isUnlinked !== prevState.isUnlinked && state.isUnlinked) {
+        debug.trick('Broadcasting unlink triggered');
+        socket.emit('unlink-triggered', {
+          timestamp: Date.now(),
+        });
+      }
+
+      // Broadcast card selection changes
+      if (state.selectedCardId !== prevState.selectedCardId && state.selectedCardId) {
+        debug.trick(`Broadcasting card selection: ${state.selectedCardId}`);
+        socket.emit('card-selected', {
+          cardId: state.selectedCardId,
+          suit: 'unknown', // Will be filled by actual card data
+          value: 'unknown',
+          timestamp: Date.now(),
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [socket]);
+
+  // Listen for state changes from other clients
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleStateChange = (data: { state: string; timestamp: number }) => {
+      debug.trick(`Received state change: ${data.state}`);
+      // Only update if different to prevent loops
+      if (useTrickStore.getState().currentState !== data.state) {
+        useTrickStore.setState({ currentState: data.state as any });
+      }
+    };
+
+    const handleUnlinkTriggered = () => {
+      debug.trick('Received unlink triggered');
+      if (!useTrickStore.getState().isUnlinked) {
+        useTrickStore.setState({ isUnlinked: true });
+      }
+    };
+
+    const handleCardSelected = (data: { cardId: string }) => {
+      debug.trick(`Received card selection: ${data.cardId}`);
+      if (useTrickStore.getState().selectedCardId !== data.cardId) {
+        useTrickStore.setState({ selectedCardId: data.cardId });
+      }
+    };
+
+    socket.on('trick-state-changed', handleStateChange);
+    socket.on('unlink-triggered', handleUnlinkTriggered);
+    socket.on('card-selected', handleCardSelected);
+
+    return () => {
+      socket.off('trick-state-changed', handleStateChange);
+      socket.off('unlink-triggered', handleUnlinkTriggered);
+      socket.off('card-selected', handleCardSelected);
+    };
+  }, [socket]);
+
   // Initialize camera sync with unlink state
   useCameraSync({ 
     enabled: true,
@@ -68,22 +142,42 @@ export function Scene() {
     }
   }, [currentState, viewType, isUnlinked, startUnlinkAnimation]);
   
-  // Track participant camera rotation for headset indicator
+  // Track participant camera rotation for headset indicator with throttling
   useEffect(() => {
     if (!socket) return undefined;
     
     if (viewType === 'participant') {
-      // Broadcast rotation updates
+      // Broadcast rotation updates with threshold to reduce network traffic
+      let lastRotation = { x: 0, y: 0, z: 0 };
+      const ROTATION_THRESHOLD = 0.01; // radians
+      
       const updateRotation = () => {
-        socket.emit('participant-rotation', {
-          x: camera.rotation.x,
-          y: camera.rotation.y,
-          z: camera.rotation.z,
-        });
+        const { x, y, z } = camera.rotation;
+        
+        // Only broadcast if rotation changed significantly
+        if (
+          Math.abs(x - lastRotation.x) > ROTATION_THRESHOLD ||
+          Math.abs(y - lastRotation.y) > ROTATION_THRESHOLD ||
+          Math.abs(z - lastRotation.z) > ROTATION_THRESHOLD
+        ) {
+          socket.emit('participant-rotation', { x, y, z });
+          lastRotation = { x, y, z };
+        }
       };
       
-      const interval = setInterval(updateRotation, 50);
-      return () => clearInterval(interval);
+      // Use requestAnimationFrame for smooth updates
+      let animationFrameId: number;
+      const animate = () => {
+        updateRotation();
+        animationFrameId = requestAnimationFrame(animate);
+      };
+      animate();
+      
+      return () => {
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+        }
+      };
     } else if (viewType === 'audience') {
       // Listen for rotation updates
       const handleRotationUpdate = (rotation: { x: number; y: number; z: number }) => {
