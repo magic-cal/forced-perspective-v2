@@ -2,7 +2,7 @@ import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
-import { ViewType, FlipState, ForcedValue } from "./types";
+import { FlipState, ForcedValue } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
 import { useTrickStore } from "@/store/useTrickStore";
 import { useSocket } from "@/sockets/SocketProvider";
@@ -20,7 +20,6 @@ export interface CardProps {
   onHover?: (isHovering: boolean) => void;
   
   // New props for trick functionality
-  viewType?: ViewType;
   forcedValue?: ForcedValue;
   isHighlighted?: boolean;
   flipState?: FlipState;
@@ -37,7 +36,6 @@ export function Card({
   isInteractive = false,
   onClick,
   onHover,
-  viewType = 'participant',
   forcedValue,
   isHighlighted = false,
   flipState = 'face-up',
@@ -122,9 +120,11 @@ export function Card({
 
   // Update material properties when needed
   useEffect(() => {
-    // Highlight selected or highlighted cards
+    // Highlight selected or highlighted cards with a more visible glow
     const shouldHighlight = isSelected || isHighlighted;
     materialsRef.current.front.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
+    materialsRef.current.front.emissive = shouldHighlight ? new THREE.Color("#ff9800") : new THREE.Color("#000000");
+    materialsRef.current.front.emissiveIntensity = shouldHighlight ? 0.5 : 0;
     materialsRef.current.front.needsUpdate = true;
   }, [isSelected, isHighlighted]);
   
@@ -137,7 +137,8 @@ export function Card({
       return 0;
     }
     
-    // Otherwise use isFlipped prop
+    // isFlipped=true means show BACK (face-down), so rotate by PI
+    // isFlipped=false means show FRONT (face-up), so no rotation
     return isFlipped ? Math.PI : 0;
   }, [flipState, isFlipped]);
 
@@ -214,6 +215,13 @@ export function Card({
     
     onClick?.();
   };
+
+  // Store flip rotation in a ref that can be accessed by parent
+  useEffect(() => {
+    if (group.current) {
+      group.current.userData.flipRotation = flipRotation;
+    }
+  }, [flipRotation]);
 
   return (
     <group

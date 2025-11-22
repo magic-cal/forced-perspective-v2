@@ -22,4 +22,20 @@ export const TRICK_CONFIG = {
     staggerDelayMs: 30,
     totalDuration: 4000,
   },
+
+  PERFORMANCE: {
+    // Toggle for less resource-intensive rendering
+    lowPerformanceMode: true,
+    // Reduced settings for low performance mode
+    lowPerf: {
+      rotationSpeed: 0,
+      maxCardsPerRow: 15,
+      animationDurations: {
+        cardFlip: 1500,
+        cameraUnlink: 3000,
+        cardReveal: 750,
+      },
+      staggerDelayMs: 60,
+    },
+  },
 } as const;

@@ -9,8 +9,8 @@ export default function App() {
   
   return (
     <main className="app-container">
-      {/* R3F Canvas - 3D Content */}
-      <Canvas className="canvas" />
+      {/* R3F Canvas - 3D Content (skip for magician) */}
+      {role !== 'magician' && <Canvas className="canvas" />}
 
       {/* DOM Content - UI Overlay */}
       <Interface />
@@ -27,6 +27,7 @@ export default function App() {
           width: 100vw;
           height: 100vh;
           overflow: hidden;
+          background: ${role === 'magician' ? '#808080' : 'transparent'};
         }
 
         .canvas {

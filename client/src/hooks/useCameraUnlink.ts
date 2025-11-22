@@ -69,28 +69,30 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const startPosition = camera.position.clone();
     const startRotation = camera.rotation.clone();
 
-    // Calculate target position on XY plane at sphere edge
-    // Project current position onto XY plane
-    const xyPosition = new THREE.Vector2(startPosition.x, startPosition.y);
-    const xyDistance = xyPosition.length();
+    // Calculate target position on the HORIZONTAL plane (XZ plane, Y stays constant)
+    // This keeps the camera at the same height and moves it to the sphere edge
+    const xzPosition = new THREE.Vector2(startPosition.x, startPosition.z);
+    const xzDistance = xzPosition.length();
     
-    // If we're at the center, use a default direction
-    const targetXY = xyDistance > 0.1 
-      ? xyPosition.normalize().multiplyScalar(-sphereRadius)
-      : new THREE.Vector2(sphereRadius, 0);
+    // If we're at the center, pick a random point on the sphere
+    const targetXZ = xzDistance > 0.1 
+      ? xzPosition.normalize().multiplyScalar(sphereRadius)
+      : new THREE.Vector2(
+          sphereRadius * Math.cos(Math.random() * Math.PI * 2),
+          sphereRadius * Math.sin(Math.random() * Math.PI * 2)
+        );
     
-    // Maintain similar Z height to avoid going through sphere
-    // Use a small offset to ensure we're outside the sphere
-    const targetZ = Math.abs(startPosition.z) < 1 ? 1 : startPosition.z;
+    // Keep Y position constant (horizontal plane)
+    const targetY = startPosition.y;
     
-    const targetPosition = new THREE.Vector3(targetXY.x, targetXY.y, targetZ);
+    const targetPosition = new THREE.Vector3(targetXZ.x, targetY, targetXZ.y);
     
     debug.camera(`Unlink target position: ${targetPosition.x}, ${targetPosition.y}, ${targetPosition.z}`);
 
     // Calculate target rotation: looking at the center of the sphere
     const targetRotation = new THREE.Euler();
     const lookAtMatrix = new THREE.Matrix4();
-    lookAtMatrix.lookAt(targetPosition, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0));
+    lookAtMatrix.lookAt(targetPosition, new THREE.Vector3(0, targetY, 0), new THREE.Vector3(0, 1, 0));
     targetRotation.setFromRotationMatrix(lookAtMatrix);
 
     // Set up animation

@@ -32,8 +32,8 @@ export function Interface() {
       <div className="interface__role-select">
         <span>Role: </span>
         <button
-          onClick={() => setRole("audience")}
-          disabled={role === "audience"}
+          onClick={() => setRole("magician")}
+          disabled={role === "magician"}
         >
           Magician
         </button>
@@ -42,6 +42,12 @@ export function Interface() {
           disabled={role === "spectator"}
         >
           Spectator
+        </button>
+        <button
+          onClick={() => setRole("audience")}
+          disabled={role === "audience"}
+        >
+          Audience
         </button>
         <span style={{ marginLeft: 8 }}>
           {role ? `Current: ${role}` : "(not selected)"}

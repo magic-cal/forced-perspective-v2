@@ -7,6 +7,7 @@ import { TrickState } from "@/types/trick";
 import { useCardFlipAnimation } from "@/hooks/useCardFlipAnimation";
 import { useTrickStore } from "@/store/useTrickStore";
 import { FORCED_CARD } from "@/utils/cardForcing";
+import { TRICK_CONFIG } from "@/config/trick";
 
 interface CardSphereProps {
   radius?: number;
@@ -41,11 +42,17 @@ export function CardSphere({
   trickState = 'setup',
   selectedCardId = null,
 }: CardSphereProps) {
+  // Apply performance mode settings
+  const effectiveRotationSpeed = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
+    ? TRICK_CONFIG.PERFORMANCE.lowPerf.rotationSpeed 
+    : rotationSpeed;
+  const effectiveMaxCardsPerRow = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
+    ? TRICK_CONFIG.PERFORMANCE.lowPerf.maxCardsPerRow 
+    : maxCardsPerRow;
   const sphereRef = useRef<THREE.Group>(null);
   const [flippedCardIndices, setFlippedCardIndices] = useState<Set<number>>(new Set());
   const [totalCardCount, setTotalCardCount] = useState(0);
   const [forcedCardValue, setForcedCardValue] = useState<ForcedValue | null>(null);
-  const [revealedCardId, setRevealedCardId] = useState<string | null>(null);
   const { nextState, lockSelection } = useTrickStore();
 
   // Create and shuffle a deck of all possible cards
@@ -86,9 +93,6 @@ export function CardSphere({
       // Apply forced card value
       setForcedCardValue(FORCED_CARD);
       
-      // Set revealed card (this will trigger flip animation)
-      setRevealedCardId(selectedCardId);
-      
       // Transition to next state after reveal animation (1.5 seconds)
       setTimeout(() => {
         console.log('Reveal complete');
@@ -120,7 +124,7 @@ export function CardSphere({
     const phi = verticalPosition * Math.PI;
 
     const sinValue = Math.pow(Math.sin(phi), 2);
-    const cardsInRow = Math.max(2, Math.round(maxCardsPerRow * sinValue));
+    const cardsInRow = Math.max(2, Math.round(effectiveMaxCardsPerRow * sinValue));
 
     const rowRadius = radius * (1 + Math.sin(phi) * 0.1) * spacingFactor;
 
@@ -142,28 +146,44 @@ export function CardSphere({
 
       const cardId = `${card.suit}-${card.value}-${row}-${i}`;
       const isSelected = cardId === selectedCardId;
-      const isRevealed = cardId === revealedCardId;
       
-      // Determine if this card should be flipped based on animation state
-      const shouldBeFlipped = flippedCardIndices.has(currentCardIndex) || 
-                              trickState === 'unlink-and-rotate' || 
-                              trickState === 'participant-selection' ||
-                              (trickState === 'lock-and-reveal' && !isRevealed);
+      // Determine if this card should show its BACK (isFlipped=true)
+      // Initially all cards show backs (isFlipped=true)
+      // During cards-flipping animation, cards that have been flipped show faces (isFlipped=false)
+      const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
+      
+      let cardFlipped: boolean;
+      if (trickState === 'setup') {
+        // All cards show backs initially
+        cardFlipped = true;
+      } else if (trickState === 'cards-flipping') {
+        // Cards that have been animated show faces, others show backs
+        cardFlipped = !hasBeenFlipped;
+      } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection') {
+        // All cards show faces
+        cardFlipped = false;
+      } else if (trickState === 'lock-and-reveal') {
+        // Revealed card shows face, others show faces too
+        cardFlipped = false;
+      } else {
+        // Default: show backs
+        cardFlipped = true;
+      }
       
       // Apply forced card value if this is the selected card in lock-and-reveal state
       const cardForcedValue = (isSelected && forcedCardValue) ? forcedCardValue : undefined;
       
-      // Revealed card should show face (not flipped)
-      const cardFlipped = isRevealed ? false : shouldBeFlipped;
-      
       rowCards.push(
-        <group key={`${row}-${i}`} position={[x, y + verticalOffset, z]}>
+        <group 
+          key={`${row}-${i}`} 
+          position={[x, y + verticalOffset, z]}
+          userData={{ isFlipped: cardFlipped }}
+        >
           <Card
             id={cardId}
             suit={card.suit}
             value={card.value}
             isFlipped={cardFlipped}
-            viewType={viewType}
             isHighlighted={isSelected}
             isInteractive={trickState === 'participant-selection' && viewType === 'participant'}
             forcedValue={cardForcedValue}
@@ -189,13 +209,24 @@ export function CardSphere({
       // Rotate each row in alternating directions
       sphereRef.current.children.forEach((row, index) => {
         const direction = index % 2 === 0 ? 1 : -1;
-        row.rotation.y += rotationSpeed * direction * delta;
+        row.rotation.y += effectiveRotationSpeed * direction * delta;
 
         row.children.forEach((cardGroup) => {
-          const cardPosition = new THREE.Vector3();
-          cardGroup.getWorldPosition(cardPosition);
-
+          // Make card face the center
           cardGroup.lookAt(new THREE.Vector3(0, 0, 0));
+          
+          // Apply flip rotation AFTER lookAt if card is flipped
+          if (cardGroup.userData.isFlipped) {
+            // Save the current quaternion from lookAt
+            const lookAtQuaternion = cardGroup.quaternion.clone();
+            
+            // Create a 180-degree rotation around the Y axis
+            const flipQuaternion = new THREE.Quaternion();
+            flipQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+            
+            // Combine: first lookAt, then flip
+            cardGroup.quaternion.copy(lookAtQuaternion).multiply(flipQuaternion);
+          }
         });
       });
     }
