@@ -23,6 +23,7 @@ export interface CardProps {
   forcedValue?: ForcedValue;
   isHighlighted?: boolean;
   flipState?: FlipState;
+  disableInternalRotation?: boolean; // Disable mesh rotation when parent handles it
 }
 
 export function Card({
@@ -39,6 +40,7 @@ export function Card({
   forcedValue,
   isHighlighted = false,
   flipState = 'face-up',
+  disableInternalRotation = false,
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   const { setSelectedCard: setLegacySelectedCard, setHoveredCard } = useCardSelectionStore();
@@ -130,6 +132,11 @@ export function Card({
   
   // Determine flip rotation based on flipState and viewType
   const flipRotation = useMemo(() => {
+    // If parent is handling rotation, don't apply internal rotation
+    if (disableInternalRotation) {
+      return 0;
+    }
+    
     // If flipState is explicitly set, use it
     if (flipState === 'face-down') {
       return Math.PI;
@@ -140,7 +147,7 @@ export function Card({
     // isFlipped=true means show BACK (face-down), so rotate by PI
     // isFlipped=false means show FRONT (face-up), so no rotation
     return isFlipped ? Math.PI : 0;
-  }, [flipState, isFlipped]);
+  }, [flipState, isFlipped, disableInternalRotation]);
 
   // Return reusable materials
   const materials = useMemo(() => {

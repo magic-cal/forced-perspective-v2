@@ -4,10 +4,10 @@ import * as THREE from "three";
 import { Card } from "./Card";
 import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES, ViewType, ForcedValue } from "./Card/types";
 import { TrickState } from "@/types/trick";
-import { useCardFlipAnimation } from "@/hooks/useCardFlipAnimation";
 import { useTrickStore } from "@/store/useTrickStore";
 import { FORCED_CARD } from "@/utils/cardForcing";
 import { TRICK_CONFIG } from "@/config/trick";
+import { easeOutQuad, easeInOutQuad, easeInQuad } from "@/utils/easing";
 
 interface CardSphereProps {
   radius?: number;
@@ -51,9 +51,11 @@ export function CardSphere({
     : maxCardsPerRow;
   const sphereRef = useRef<THREE.Group>(null);
   const [flippedCardIndices, setFlippedCardIndices] = useState<Set<number>>(new Set());
+  const [animatingCardIndices, setAnimatingCardIndices] = useState<Map<number, { startTime: number; progress: number }>>(new Map());
   const [totalCardCount, setTotalCardCount] = useState(0);
   const [forcedCardValue, setForcedCardValue] = useState<ForcedValue | null>(null);
   const { nextState, lockSelection } = useTrickStore();
+  const animationStartTimeRef = useRef<number | null>(null);
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -66,21 +68,32 @@ export function CardSphere({
     return deterministicShuffleArray(deck, 111111);
   }, []);
   
-  // Initialize card flip animation
-  const { startFlipAnimation, getFlippedCards, isAnimating } = useCardFlipAnimation({
-    totalCards: totalCardCount,
-    onComplete: () => {
-      console.log('All cards flipped, transitioning to next state');
-      nextState();
-    },
-  });
+  // Start flip animation with staggered delays
+  const startFlipAnimation = () => {
+    const staggerDelay = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
+      ? TRICK_CONFIG.PERFORMANCE.lowPerf.staggerDelayMs 
+      : TRICK_CONFIG.CARD_FLIP.staggerDelayMs;
+    
+    const newAnimatingCards = new Map<number, { startTime: number; progress: number }>();
+    const currentTime = Date.now();
+    
+    for (let i = 0; i < totalCardCount; i++) {
+      newAnimatingCards.set(i, {
+        startTime: currentTime + (i * staggerDelay),
+        progress: 0,
+      });
+    }
+    
+    setAnimatingCardIndices(newAnimatingCards);
+    animationStartTimeRef.current = currentTime;
+  };
   
   // Trigger flip animation when entering cards-flipping state
   useEffect(() => {
-    if (trickState === 'cards-flipping' && !isAnimating && totalCardCount > 0) {
+    if (trickState === 'cards-flipping' && animatingCardIndices.size === 0 && totalCardCount > 0) {
       startFlipAnimation();
     }
-  }, [trickState, isAnimating, totalCardCount, startFlipAnimation]);
+  }, [trickState, totalCardCount]);
   
   // Handle lock and reveal state
   useEffect(() => {
@@ -101,13 +114,7 @@ export function CardSphere({
     }
   }, [trickState, selectedCardId, lockSelection]);
   
-  // Update flipped cards during animation
-  useFrame(() => {
-    if (isAnimating) {
-      const flipped = getFlippedCards(Date.now());
-      setFlippedCardIndices(flipped);
-    }
-  });
+
 
   // Calculate spacing based on card dimensions
   const cardHeight = CARD_DIMENSIONS.height;
@@ -177,16 +184,21 @@ export function CardSphere({
         <group 
           key={`${row}-${i}`} 
           position={[x, y + verticalOffset, z]}
-          userData={{ isFlipped: cardFlipped }}
+          userData={{ 
+            isFlipped: cardFlipped,
+            cardIndex: currentCardIndex,
+            basePosition: new THREE.Vector3(x, y + verticalOffset, z)
+          }}
         >
           <Card
             id={cardId}
             suit={card.suit}
             value={card.value}
-            isFlipped={cardFlipped}
+            isFlipped={false}
             isHighlighted={isSelected}
             isInteractive={trickState === 'participant-selection' && viewType === 'participant'}
             forcedValue={cardForcedValue}
+            disableInternalRotation={true}
           />
         </group>
       );
@@ -203,57 +215,151 @@ export function CardSphere({
     setTotalCardCount(cardIndex);
   }
 
+  // Helper function to calculate inward-facing orientation (back visible from center)
+  const calculateInwardOrientation = (cardGroup: THREE.Group) => {
+    const centerPosition = new THREE.Vector3(0, 0, 0);
+    
+    // Make card face inward (toward center)
+    cardGroup.lookAt(centerPosition);
+    
+    // Apply 180° Y-axis rotation so back texture is visible from center
+    cardGroup.rotateY(Math.PI);
+  };
+
+  // Animate card flip with three phases: forward, rotate, return
+  const animateCardFlip = (
+    cardIndex: number, 
+    elapsedTime: number, 
+    cardWorldPos: THREE.Vector3
+  ): { positionOffset: THREE.Vector3; rotationProgress: number; isComplete: boolean } => {
+    const flipDuration = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
+      ? TRICK_CONFIG.PERFORMANCE.lowPerf.animationDurations.cardFlip 
+      : TRICK_CONFIG.ANIMATION_DURATIONS.cardFlip;
+    
+    const animData = animatingCardIndices.get(cardIndex);
+    if (!animData) {
+      return { positionOffset: new THREE.Vector3(0, 0, 0), rotationProgress: 1.0, isComplete: true };
+    }
+    
+    const timeSinceStart = elapsedTime - animData.startTime;
+    if (timeSinceStart < 0) {
+      // Animation hasn't started yet (stagger delay)
+      return { positionOffset: new THREE.Vector3(0, 0, 0), rotationProgress: 0, isComplete: false };
+    }
+    
+    const progress = Math.min(timeSinceStart / flipDuration, 1.0);
+    const outwardDirection = cardWorldPos.clone().normalize();
+    const forwardDistance = 2;
+    
+    let positionOffset = new THREE.Vector3(0, 0, 0);
+    let rotationProgress = 0;
+    
+    if (progress < 0.3) {
+      // Phase 1: Forward motion (0-30%)
+      const forwardProgress = progress / 0.3;
+      const easedProgress = easeOutQuad(forwardProgress);
+      positionOffset = outwardDirection.clone().multiplyScalar(forwardDistance * easedProgress);
+      rotationProgress = 0;
+    } else if (progress < 0.7) {
+      // Phase 2: Rotation (30-70%)
+      const rotateProgress = (progress - 0.3) / 0.4;
+      const easedProgress = easeInOutQuad(rotateProgress);
+      positionOffset = outwardDirection.clone().multiplyScalar(forwardDistance);
+      rotationProgress = easedProgress;
+    } else {
+      // Phase 3: Return motion (70-100%)
+      const returnProgress = (progress - 0.7) / 0.3;
+      const easedProgress = easeInQuad(returnProgress);
+      positionOffset = outwardDirection.clone().multiplyScalar(forwardDistance * (1 - easedProgress));
+      rotationProgress = 1.0;
+    }
+    
+    return { positionOffset, rotationProgress, isComplete: progress >= 1.0 };
+  };
+
   // Animate the rows and update card rotations
   useFrame((_state, delta) => {
     if (sphereRef.current) {
+      const currentTime = Date.now();
+      let completedCount = 0;
+      
       // Rotate each row in alternating directions
-      let cardIndex = 0;
       sphereRef.current.children.forEach((row, index) => {
         const direction = index % 2 === 0 ? 1 : -1;
         row.rotation.y += effectiveRotationSpeed * direction * delta;
 
         row.children.forEach((cardGroup) => {
-          // Update isFlipped state based on current animation state
-          const currentCardIndex = cardIndex++;
-          const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
-          
-          let shouldBeFlipped: boolean;
-          if (trickState === 'setup') {
-            shouldBeFlipped = true;
-          } else if (trickState === 'cards-flipping') {
-            shouldBeFlipped = !hasBeenFlipped;
-          } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection' || trickState === 'lock-and-reveal') {
-            shouldBeFlipped = false;
-          } else {
-            shouldBeFlipped = true;
-          }
-          
-          cardGroup.userData.isFlipped = shouldBeFlipped;
+          const currentCardIndex = cardGroup.userData.cardIndex as number;
           
           // Get the card's world position
           const cardWorldPos = new THREE.Vector3();
           cardGroup.getWorldPosition(cardWorldPos);
           
-          // Calculate direction from center to card (outward)
-          const outwardDirection = cardWorldPos.clone().normalize();
+          // Check if this card is animating
+          const isAnimating = animatingCardIndices.has(currentCardIndex);
+          const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
           
-          // Make card face outward (toward spectator)
-          cardGroup.lookAt(cardWorldPos.clone().add(outwardDirection));
-          
-          // If card is flipped (showing back), rotate 180° so back faces spectator
-          if (cardGroup.userData.isFlipped) {
-            // Save the current quaternion from lookAt
-            const lookAtQuaternion = cardGroup.quaternion.clone();
+          if (isAnimating && trickState === 'cards-flipping') {
+            // Apply flip animation
+            const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
+              currentCardIndex, 
+              currentTime, 
+              cardWorldPos
+            );
             
-            // Create a 180-degree rotation around the Y axis
-            const flipQuaternion = new THREE.Quaternion();
-            flipQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+            // Apply position offset (relative to base position)
+            const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+            cardGroup.position.copy(basePosition).add(positionOffset);
             
-            // Combine: first lookAt, then flip
-            cardGroup.quaternion.copy(lookAtQuaternion).multiply(flipQuaternion);
+            // Start with inward orientation, then add flip rotation
+            calculateInwardOrientation(cardGroup as THREE.Group);
+            
+            // Add the flip rotation (0 to PI) on top of the inward orientation
+            // This rotates the card 180 degrees around its local Y axis
+            const flipAngle = rotationProgress * Math.PI;
+            cardGroup.rotateY(flipAngle);
+            
+            // Mark as flipped when animation completes
+            if (isComplete) {
+              setFlippedCardIndices(prev => {
+                const newSet = new Set(prev);
+                newSet.add(currentCardIndex);
+                return newSet;
+              });
+              setAnimatingCardIndices(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentCardIndex);
+                return newMap;
+              });
+              completedCount++;
+            }
+            
+            cardGroup.userData.isFlipped = false; // Show face after flip
+          } else if (hasBeenFlipped || (trickState !== 'setup' && trickState !== 'cards-flipping')) {
+            // Post-flip state: cards have been flipped, so they face outward with faces visible
+            // Start with inward orientation, then add the full 180° flip
+            calculateInwardOrientation(cardGroup as THREE.Group);
+            cardGroup.rotateY(Math.PI); // Add the full flip rotation
+            cardGroup.userData.isFlipped = false;
+            
+            // Reset position to base
+            const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+            if (basePosition) {
+              cardGroup.position.copy(basePosition);
+            }
+          } else {
+            // Initial state: inward-facing
+            calculateInwardOrientation(cardGroup as THREE.Group);
+            cardGroup.userData.isFlipped = true;
           }
         });
       });
+      
+      // Check if all animations are complete
+      if (animatingCardIndices.size > 0 && animatingCardIndices.size === completedCount) {
+        console.log('All cards flipped, transitioning to next state');
+        nextState();
+      }
     }
   });
 
