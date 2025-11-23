@@ -38,6 +38,13 @@ export function DeviceOrientationControls({
   // Store target quaternion for smooth interpolation
   const targetQuaternion = useRef(new THREE.Quaternion());
   const currentQuaternion = useRef(new THREE.Quaternion());
+  
+  // Performance optimization: reuse objects to avoid garbage collection
+  const tempMatrix = useRef(new THREE.Matrix4());
+  const tempQuaternion = useRef(new THREE.Quaternion());
+  const yawMatrix = useRef(new THREE.Matrix4());
+  const pitchMatrix = useRef(new THREE.Matrix4());
+  const rollMatrix = useRef(new THREE.Matrix4());
 
   const handleOrientation = useCallback(
     (event: DeviceOrientationEvent) => {
@@ -76,31 +83,28 @@ export function DeviceOrientationControls({
         (event.gamma || 0) - initialDeviceOrientation.current.gamma
       );
 
-      // Create a rotation matrix for the relative device movement
-      const rotationMatrix = new THREE.Matrix4();
-
+      // Reuse matrix objects to avoid garbage collection
       // Apply rotations in the correct order:
       // 1. Yaw (alpha) - rotation around Z axis
-      const yawMatrix = new THREE.Matrix4().makeRotationZ(alpha);
+      yawMatrix.current.makeRotationZ(alpha);
 
       // 2. Pitch (beta) - rotation around X axis
-      const pitchMatrix = new THREE.Matrix4().makeRotationX(beta);
+      pitchMatrix.current.makeRotationX(beta);
 
       // 3. Roll (gamma) - rotation around Y axis
-      const rollMatrix = new THREE.Matrix4().makeRotationY(gamma);
+      rollMatrix.current.makeRotationY(gamma);
 
       // Combine the rotations in the correct order
-      rotationMatrix.multiply(yawMatrix);
-      rotationMatrix.multiply(pitchMatrix);
-      rotationMatrix.multiply(rollMatrix);
+      tempMatrix.current.identity();
+      tempMatrix.current.multiply(yawMatrix.current);
+      tempMatrix.current.multiply(pitchMatrix.current);
+      tempMatrix.current.multiply(rollMatrix.current);
 
       // Calculate target quaternion
       if (initialCameraQuaternion.current) {
-        const newQuaternion = initialCameraQuaternion.current.clone();
-        newQuaternion.multiply(
-          new THREE.Quaternion().setFromRotationMatrix(rotationMatrix)
-        );
-        targetQuaternion.current.copy(newQuaternion);
+        tempQuaternion.current.setFromRotationMatrix(tempMatrix.current);
+        targetQuaternion.current.copy(initialCameraQuaternion.current);
+        targetQuaternion.current.multiply(tempQuaternion.current);
       }
     },
     [testAxis, initialValues]
@@ -120,20 +124,29 @@ export function DeviceOrientationControls({
     }
   }, [enabled, camera]);
 
-  // Smooth camera movement
+  // Smooth camera movement with adaptive lerp factor
   useEffect(() => {
     if (!enabled) return;
 
     let animationFrameId: number;
+    let lastTime = performance.now();
 
-    const updateCamera = () => {
-      currentQuaternion.current.slerp(targetQuaternion.current, 0.1);
+    const updateCamera = (currentTime: number) => {
+      // Calculate delta time for frame-rate independent smoothing
+      const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+      lastTime = currentTime;
+
+      // Adaptive lerp factor: faster on larger differences, smoother on smaller ones
+      const angleDiff = currentQuaternion.current.angleTo(targetQuaternion.current);
+      const lerpFactor = Math.min(0.15 + angleDiff * 0.5, 0.3) * Math.min(deltaTime * 60, 1);
+
+      currentQuaternion.current.slerp(targetQuaternion.current, lerpFactor);
       camera.quaternion.copy(currentQuaternion.current);
 
       animationFrameId = requestAnimationFrame(updateCamera);
     };
 
-    updateCamera();
+    animationFrameId = requestAnimationFrame(updateCamera);
 
     return () => {
       cancelAnimationFrame(animationFrameId);

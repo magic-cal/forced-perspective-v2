@@ -8,6 +8,12 @@ type CameraState = {
   rotation: { x: number; y: number; z: number };
 };
 
+// Reusable state object to avoid allocations
+const cameraStateCache: CameraState = {
+  position: { x: 0, y: 0, z: 0 },
+  rotation: { x: 0, y: 0, z: 0 },
+};
+
 type CameraSyncOptions = {
   /** Whether to enable camera syncing */
   enabled?: boolean;
@@ -33,11 +39,65 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
   // Determine effective view type from role if not explicitly provided
   const effectiveViewType = viewType ?? (role === 'spectator' ? 'participant' : 'audience');
 
-  // Throttled camera update function
+  // Smooth interpolation refs for audience
+  const targetPosition = useRef({ x: 0, y: 0, z: 0 });
+  const targetRotation = useRef({ x: 0, y: 0, z: 0 });
+  const isInterpolating = useRef(false);
+
+  // Throttled camera update function with smooth interpolation
   const updateCamera = useCallback((data: CameraState) => {
-    camera.position.set(data.position.x, data.position.y, data.position.z);
-    camera.rotation.set(data.rotation.x, data.rotation.y, data.rotation.z);
-  }, [camera]);
+    targetPosition.current = { ...data.position };
+    targetRotation.current = { ...data.rotation };
+    isInterpolating.current = true;
+  }, []);
+
+  // Smooth interpolation loop for audience
+  useEffect(() => {
+    if (!camera || role !== 'audience' || !enabled) return;
+
+    let animationFrameId: number;
+    let lastTime = performance.now();
+
+    const interpolateCamera = (currentTime: number) => {
+      if (isInterpolating.current) {
+        const deltaTime = (currentTime - lastTime) / 1000;
+        lastTime = currentTime;
+
+        // Smooth lerp factor (adjust for responsiveness vs smoothness)
+        const lerpFactor = Math.min(0.2 * Math.min(deltaTime * 60, 1), 1);
+
+        // Interpolate position
+        camera.position.x += (targetPosition.current.x - camera.position.x) * lerpFactor;
+        camera.position.y += (targetPosition.current.y - camera.position.y) * lerpFactor;
+        camera.position.z += (targetPosition.current.z - camera.position.z) * lerpFactor;
+
+        // Interpolate rotation
+        camera.rotation.x += (targetRotation.current.x - camera.rotation.x) * lerpFactor;
+        camera.rotation.y += (targetRotation.current.y - camera.rotation.y) * lerpFactor;
+        camera.rotation.z += (targetRotation.current.z - camera.rotation.z) * lerpFactor;
+
+        // Check if we're close enough to stop interpolating
+        const positionDiff = Math.abs(targetPosition.current.x - camera.position.x) +
+                            Math.abs(targetPosition.current.y - camera.position.y) +
+                            Math.abs(targetPosition.current.z - camera.position.z);
+        const rotationDiff = Math.abs(targetRotation.current.x - camera.rotation.x) +
+                            Math.abs(targetRotation.current.y - camera.rotation.y) +
+                            Math.abs(targetRotation.current.z - camera.rotation.z);
+
+        if (positionDiff < 0.001 && rotationDiff < 0.001) {
+          isInterpolating.current = false;
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(interpolateCamera);
+    };
+
+    animationFrameId = requestAnimationFrame(interpolateCamera);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [camera, role, enabled]);
 
   // Handle camera updates from socket
   useEffect(() => {
@@ -49,7 +109,6 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     const handleCameraUpdate = (data: CameraState) => {
       if (!data) return;
       try {
-        console.log('[Camera Sync] Audience receiving camera update:', data);
         updateCamera(data);
       } catch (error) {
         console.error('Error updating camera:', error);
@@ -76,40 +135,65 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
       return;
     }
 
+    // Track last sent values to avoid unnecessary updates
+    let lastSentPosition = { x: 0, y: 0, z: 0 };
+    let lastSentRotation = { x: 0, y: 0, z: 0 };
+    const threshold = 0.001; // Minimum change to trigger update
+
     const handleCameraChange = () => {
       if (!socket) return;
       
-      const state: CameraState = {
-        position: {
-          x: camera.position.x,
-          y: camera.position.y,
-          z: camera.position.z,
-        },
-        rotation: {
-          x: camera.rotation.x,
-          y: camera.rotation.y,
-          z: camera.rotation.z,
-        },
-      };
+      // Check if camera has changed significantly
+      const positionChanged = 
+        Math.abs(camera.position.x - lastSentPosition.x) > threshold ||
+        Math.abs(camera.position.y - lastSentPosition.y) > threshold ||
+        Math.abs(camera.position.z - lastSentPosition.z) > threshold;
       
-      console.log('[Camera Sync] Spectator broadcasting camera update:', state);
+      const rotationChanged = 
+        Math.abs(camera.rotation.x - lastSentRotation.x) > threshold ||
+        Math.abs(camera.rotation.y - lastSentRotation.y) > threshold ||
+        Math.abs(camera.rotation.z - lastSentRotation.z) > threshold;
+
+      if (!positionChanged && !rotationChanged) {
+        return; // Skip update if no significant change
+      }
+
+      // Reuse cache object to avoid allocations
+      cameraStateCache.position.x = camera.position.x;
+      cameraStateCache.position.y = camera.position.y;
+      cameraStateCache.position.z = camera.position.z;
+      cameraStateCache.rotation.x = camera.rotation.x;
+      cameraStateCache.rotation.y = camera.rotation.y;
+      cameraStateCache.rotation.z = camera.rotation.z;
+
+      // Update last sent values
+      lastSentPosition = { ...cameraStateCache.position };
+      lastSentRotation = { ...cameraStateCache.rotation };
+      
       // Use consistent event name
-      socket.emit('camera-update', state);
+      socket.emit('camera-update', cameraStateCache);
     };
 
-    // Throttle camera updates
-    const throttledUpdate = throttle(handleCameraChange, throttleMs);
-    
     // Initial update immediately
     console.log('[Camera Sync] Spectator starting camera broadcast');
     handleCameraChange();
     
-    // Set up continuous updates using useFrame-like behavior
-    const intervalId = setInterval(handleCameraChange, throttleMs);
+    // Use requestAnimationFrame for smoother updates tied to render loop
+    let animationFrameId: number;
+    let lastUpdateTime = 0;
+
+    const updateLoop = (currentTime: number) => {
+      if (currentTime - lastUpdateTime >= throttleMs) {
+        handleCameraChange();
+        lastUpdateTime = currentTime;
+      }
+      animationFrameId = requestAnimationFrame(updateLoop);
+    };
+
+    animationFrameId = requestAnimationFrame(updateLoop);
     
     return () => {
-      clearInterval(intervalId);
-      throttledUpdate.cancel();
+      cancelAnimationFrame(animationFrameId);
     };
   }, [camera, gl, role, socket, enabled, throttleMs, effectiveViewType]);
 
@@ -129,40 +213,4 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
      */
     updateCamera,
   };
-}
-
-// Throttle implementation
-function throttle<T extends (...args: any[]) => void>(
-  func: T,
-  limit: number
-): T & { cancel: () => void } {
-  let inThrottle = false;
-  let lastFunc: ReturnType<typeof setTimeout> | null = null;
-  let lastRan = 0;
-
-  const throttled = function (this: ThisParameterType<T>, ...args: Parameters<T>) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      lastRan = Date.now();
-      inThrottle = true;
-    } else {
-      if (lastFunc) clearTimeout(lastFunc);
-      lastFunc = setTimeout(
-        () => {
-          if (Date.now() - lastRan >= limit) {
-            func.apply(this, args);
-            lastRan = Date.now();
-          }
-        },
-        Math.max(0, limit - (Date.now() - lastRan))
-      );
-    }
-  } as T & { cancel: () => void };
-
-  throttled.cancel = () => {
-    if (lastFunc) clearTimeout(lastFunc);
-    inThrottle = false;
-  };
-
-  return throttled;
 }
