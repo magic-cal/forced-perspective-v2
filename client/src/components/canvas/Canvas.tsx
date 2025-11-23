@@ -37,8 +37,10 @@ export function Canvas({ className }: CanvasWrapperProps) {
           toneMapping: 3, // ACESFilmicToneMapping
           outputColorSpace: "srgb",
         }}
-        onCreated={({ gl }) => {
+        onCreated={({ gl, camera }) => {
           glRef.current = gl;
+          // Point camera at the horizon
+          camera.lookAt(0, camera.position.y, 0);
         }}
       >
         <color attach="background" args={["#1a1a1a"]} />

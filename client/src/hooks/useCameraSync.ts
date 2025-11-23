@@ -40,8 +40,9 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
   const effectiveViewType = viewType ?? (role === 'spectator' ? 'participant' : 'audience');
 
   // Smooth interpolation refs for audience
-  const targetPosition = useRef({ x: 0, y: 0, z: 0 });
-  const targetRotation = useRef({ x: 0, y: 0, z: 0 });
+  // Initialize with camera's current position/rotation to avoid jumping
+  const targetPosition = useRef({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+  const targetRotation = useRef({ x: camera.rotation.x, y: camera.rotation.y, z: camera.rotation.z });
   const isInterpolating = useRef(false);
 
   // Throttled camera update function with smooth interpolation
@@ -51,9 +52,15 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     isInterpolating.current = true;
   }, []);
 
+  // Stop interpolation immediately
+  const stopInterpolation = useCallback(() => {
+    isInterpolating.current = false;
+  }, []);
+
   // Smooth interpolation loop for audience
   useEffect(() => {
-    if (!camera || role !== 'audience' || !enabled) return;
+    // Don't interpolate if unlinked (camera is controlled by unlink animation)
+    if (!camera || role !== 'audience' || !enabled || isUnlinked) return;
 
     let animationFrameId: number;
     let lastTime = performance.now();
@@ -97,7 +104,7 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [camera, role, enabled]);
+  }, [camera, role, enabled, isUnlinked]);
 
   // Handle camera updates from socket
   useEffect(() => {
@@ -212,5 +219,9 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
      * Manually trigger a camera update
      */
     updateCamera,
+    /**
+     * Stop camera interpolation immediately
+     */
+    stopInterpolation,
   };
 }

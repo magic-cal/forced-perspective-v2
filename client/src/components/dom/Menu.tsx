@@ -27,7 +27,9 @@ const MenuButton = styled.button`
   }
 `;
 
-const MenuItems = styled.div<{ isOpen: boolean }>`
+const MenuItems = styled.div.withConfig({
+  shouldForwardProp: (prop) => prop !== 'isOpen',
+})<{ isOpen: boolean }>`
   position: absolute;
   top: 50px;
   right: 0;
@@ -35,7 +37,7 @@ const MenuItems = styled.div<{ isOpen: boolean }>`
   backdrop-filter: blur(5px);
   border-radius: 8px;
   padding: 8px;
-  display: ${(props: { isOpen: boolean }) => (props.isOpen ? "flex" : "none")};
+  display: ${(props) => (props.isOpen ? "flex" : "none")};
   flex-direction: column;
   gap: 8px;
   min-width: 200px;

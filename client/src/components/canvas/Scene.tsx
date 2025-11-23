@@ -145,10 +145,9 @@ export function Scene() {
 
   // Initialize scene
   useEffect(() => {
-    camera.position.set(0, 0, 0);
     gl.shadowMap.enabled = true;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
-  }, [camera, gl]);
+  }, [gl]);
 
   const handleDeckClick = () => {
     setIsSpread(!isSpread);

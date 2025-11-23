@@ -2,15 +2,15 @@
 
 - [x] View of all cards simple
 - [x] View of all cards with animation
-- [ ] Card interaction
-- [ ] Card switching
-- [ ] Perspective mirroring with alternate view
+- [x] Card interaction
+- [x] Card switching
+- [x] Perspective mirroring with alternate view
 
 # Bugs
 
-- [ ] Map card index to card (not position/ card id)
+- [x] Map card index to card (not position/ card id)
 - [ ] Not connecting with phone
-- [ ] Certificate issue with local dev
+- [x] Certificate issue with local dev
 
 # Tidies/ Improvements
 
@@ -18,13 +18,11 @@
 - [x] Move the socket to a separate file
 - [x] Move the cards logic to a manager
 - [ ] Don't expose the mesh of the card
-- [ ] Cards surrounding user
+- [x] Cards surrounding user
 - [ ] CI/CD pipeline
 - [ ] Get controller raycast to match UI
 - [ ] Provide a cleaner UI to interact with
 - [ ] Make a interface for perspective mirroring
-- [ ] Scene separation
-- [ ] Look at using multiple projects for the different parts
 
 # Nice to have
 

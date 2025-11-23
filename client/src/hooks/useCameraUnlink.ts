@@ -20,14 +20,19 @@ function easeInOutQuad(t: number): number {
 function calculateCameraArcMovement(
   progress: number,
   startPosition: THREE.Vector3,
+  targetPosition: THREE.Vector3,
   sphereRadius: number
 ): { position: THREE.Vector3; lookAt: THREE.Vector3 } {
-  // Define fulcrum point on sphere edge (at spectator's eye level, Y=0)
-  const fulcrumPoint = new THREE.Vector3(sphereRadius, 0, 0);
+  // Define fulcrum point at the center (where the sphere is)
+  const fulcrumPoint = new THREE.Vector3(0, startPosition.y, 0);
   
-  // Calculate arc center and radius
+  // Calculate arc center and radius based on start and target positions
   const arcCenter = fulcrumPoint.clone();
-  const arcRadius = startPosition.distanceTo(arcCenter);
+  const startRadius = startPosition.distanceTo(arcCenter);
+  const targetRadius = targetPosition.distanceTo(arcCenter);
+  
+  // Interpolate radius to move away from center
+  const currentRadius = startRadius + (targetRadius - startRadius) * progress;
   
   // Calculate start and end angles in the XZ plane
   const startAngle = Math.atan2(
@@ -39,11 +44,11 @@ function calculateCameraArcMovement(
   // Interpolate angle based on progress
   const currentAngle = startAngle + (endAngle - startAngle) * progress;
   
-  // Calculate new camera position on arc
+  // Calculate new camera position on arc with interpolated radius
   const newPosition = new THREE.Vector3(
-    arcCenter.x + arcRadius * Math.cos(currentAngle),
+    arcCenter.x + currentRadius * Math.cos(currentAngle),
     startPosition.y, // Maintain Y position
-    arcCenter.z + arcRadius * Math.sin(currentAngle)
+    arcCenter.z + currentRadius * Math.sin(currentAngle)
   );
   
   return { position: newPosition, lookAt: fulcrumPoint };
@@ -67,6 +72,12 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     targetRotation: THREE.Euler;
     useCircularArc: boolean;
   } | null>(null);
+  
+  // Store the initial camera state to prevent jumping
+  const initialCameraState = useRef<{
+    position: THREE.Vector3;
+    rotation: THREE.Euler;
+  } | null>(null);
 
   // Animation frame handler
   useFrame(() => {
@@ -77,10 +88,11 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const easedProgress = easeInOutQuad(progress);
 
     if (animationRef.current.useCircularArc) {
-      // Use circular arc movement
+      // Use circular arc movement with distance interpolation
       const { position, lookAt } = calculateCameraArcMovement(
         easedProgress,
         animationRef.current.startPosition,
+        animationRef.current.targetPosition,
         sphereRadius
       );
       
@@ -103,31 +115,61 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
 
     // Check if animation is complete
     if (progress >= 1) {
+      // Ensure final position is set exactly to prevent any drift
+      if (animationRef.current.useCircularArc) {
+        const finalPosition = animationRef.current.targetPosition.clone();
+        const finalLookAt = new THREE.Vector3(0, animationRef.current.targetPosition.y, 0);
+        
+        camera.position.copy(finalPosition);
+        camera.lookAt(finalLookAt);
+        
+        debug.camera(`Final camera position: ${finalPosition.x.toFixed(2)}, ${finalPosition.y.toFixed(2)}, ${finalPosition.z.toFixed(2)}`);
+      } else {
+        camera.position.copy(animationRef.current.targetPosition);
+        camera.quaternion.setFromEuler(animationRef.current.targetRotation);
+      }
+      
       setIsAnimating(false);
       animationRef.current = null;
+      initialCameraState.current = null; // Reset for next animation
       debug.camera('Camera unlink animation complete');
       onComplete?.();
     }
   });
 
+  const captureInitialState = useCallback(() => {
+    // Capture the camera state before any animation starts
+    initialCameraState.current = {
+      position: camera.position.clone(),
+      rotation: camera.rotation.clone(),
+    };
+    debug.camera(`Captured initial camera state: pos(${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)})`);
+  }, [camera]);
+
   const startUnlinkAnimation = useCallback(async () => {
     debug.camera('Starting camera unlink animation');
 
-    // Store current camera state
-    const startPosition = camera.position.clone();
-    const startRotation = camera.rotation.clone();
+    // If initial state wasn't captured, capture it now
+    if (!initialCameraState.current) {
+      captureInitialState();
+    }
+
+    // Use the frozen initial state as the starting point
+    const startPosition = initialCameraState.current!.position.clone();
+    const startRotation = initialCameraState.current!.rotation.clone();
 
     // Calculate target position on the HORIZONTAL plane (XZ plane, Y stays constant)
-    // This keeps the camera at the same height and moves it to the sphere edge
+    // Move camera further back for better view - use 2x the sphere radius
+    const targetDistance = sphereRadius * 2;
     const xzPosition = new THREE.Vector2(startPosition.x, startPosition.z);
     const xzDistance = xzPosition.length();
     
     // If we're at the center, pick a random point on the sphere
     const targetXZ = xzDistance > 0.1 
-      ? xzPosition.normalize().multiplyScalar(sphereRadius)
+      ? xzPosition.normalize().multiplyScalar(targetDistance)
       : new THREE.Vector2(
-          sphereRadius * Math.cos(Math.random() * Math.PI * 2),
-          sphereRadius * Math.sin(Math.random() * Math.PI * 2)
+          targetDistance * Math.cos(Math.random() * Math.PI * 2),
+          targetDistance * Math.sin(Math.random() * Math.PI * 2)
         );
     
     // Keep Y position constant (horizontal plane)
@@ -135,7 +177,8 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     
     const targetPosition = new THREE.Vector3(targetXZ.x, targetY, targetXZ.y);
     
-    debug.camera(`Unlink target position: ${targetPosition.x}, ${targetPosition.y}, ${targetPosition.z}`);
+    debug.camera(`Unlink start position: ${startPosition.x.toFixed(2)}, ${startPosition.y.toFixed(2)}, ${startPosition.z.toFixed(2)}`);
+    debug.camera(`Unlink target position: ${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}, ${targetPosition.z.toFixed(2)}`);
 
     // Calculate target rotation: looking at the center of the sphere
     const targetRotation = new THREE.Euler();
@@ -168,8 +211,17 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     });
   }, [camera, sphereRadius, isAnimating, onComplete]);
 
+  const resetUnlinkState = useCallback(() => {
+    initialCameraState.current = null;
+    animationRef.current = null;
+    setIsAnimating(false);
+    debug.camera('Camera unlink state reset');
+  }, []);
+
   return {
     startUnlinkAnimation,
+    captureInitialState,
+    resetUnlinkState,
     isAnimating,
   };
 }
