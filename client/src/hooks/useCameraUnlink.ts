@@ -22,7 +22,7 @@ function calculateCameraArcMovement(
   startPosition: THREE.Vector3,
   targetPosition: THREE.Vector3,
   sphereRadius: number
-): { position: THREE.Vector3; lookAt: THREE.Vector3 } {
+): { position: THREE.Vector3 } {
   // Define fulcrum point at the center (where the sphere is)
   const fulcrumPoint = new THREE.Vector3(0, startPosition.y, 0);
   
@@ -51,7 +51,7 @@ function calculateCameraArcMovement(
     arcCenter.z + currentRadius * Math.sin(currentAngle)
   );
   
-  return { position: newPosition, lookAt: fulcrumPoint };
+  return { position: newPosition };
 }
 
 export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
@@ -87,9 +87,10 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const progress = Math.min(elapsed / animationDuration, 1);
     const easedProgress = easeInOutQuad(progress);
 
+    // Always update camera position/rotation, even on the final frame
     if (animationRef.current.useCircularArc) {
       // Use circular arc movement with distance interpolation
-      const { position, lookAt } = calculateCameraArcMovement(
+      const { position } = calculateCameraArcMovement(
         easedProgress,
         animationRef.current.startPosition,
         animationRef.current.targetPosition,
@@ -97,7 +98,12 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
       );
       
       camera.position.copy(position);
-      camera.lookAt(lookAt);
+      
+      // Smoothly interpolate rotation using quaternions
+      const startQuat = new THREE.Quaternion().setFromEuler(animationRef.current.startRotation);
+      const targetQuat = new THREE.Quaternion().setFromEuler(animationRef.current.targetRotation);
+      const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, easedProgress);
+      camera.quaternion.copy(currentQuat);
     } else {
       // Use linear interpolation (legacy behavior)
       camera.position.lerpVectors(
@@ -113,21 +119,9 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
       camera.quaternion.copy(currentQuat);
     }
 
-    // Check if animation is complete
+    // Check if animation is complete (after updating camera)
     if (progress >= 1) {
-      // Ensure final position is set exactly to prevent any drift
-      if (animationRef.current.useCircularArc) {
-        const finalPosition = animationRef.current.targetPosition.clone();
-        const finalLookAt = new THREE.Vector3(0, animationRef.current.targetPosition.y, 0);
-        
-        camera.position.copy(finalPosition);
-        camera.lookAt(finalLookAt);
-        
-        debug.camera(`Final camera position: ${finalPosition.x.toFixed(2)}, ${finalPosition.y.toFixed(2)}, ${finalPosition.z.toFixed(2)}`);
-      } else {
-        camera.position.copy(animationRef.current.targetPosition);
-        camera.quaternion.setFromEuler(animationRef.current.targetRotation);
-      }
+      debug.camera(`Final camera position: ${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}`);
       
       setIsAnimating(false);
       animationRef.current = null;
@@ -156,17 +150,18 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
 
     // Use the frozen initial state as the starting point
     const startPosition = initialCameraState.current!.position.clone();
-    const startRotation = initialCameraState.current!.rotation.clone();
+    // Capture the current camera rotation to ensure smooth start
+    const startRotation = camera.rotation.clone();
 
     // Calculate target position on the HORIZONTAL plane (XZ plane, Y stays constant)
-    // Move camera further back for better view - use 2x the sphere radius
-    const targetDistance = sphereRadius * 2;
+    // Move camera to the opposite side - use 3x the sphere radius for better view
+    const targetDistance = sphereRadius * 3;
     const xzPosition = new THREE.Vector2(startPosition.x, startPosition.z);
     const xzDistance = xzPosition.length();
     
-    // If we're at the center, pick a random point on the sphere
+    // Calculate the opposite position (180° rotation around Y axis)
     const targetXZ = xzDistance > 0.1 
-      ? xzPosition.normalize().multiplyScalar(targetDistance)
+      ? xzPosition.normalize().multiplyScalar(-targetDistance) // Negate to get opposite side
       : new THREE.Vector2(
           targetDistance * Math.cos(Math.random() * Math.PI * 2),
           targetDistance * Math.sin(Math.random() * Math.PI * 2)

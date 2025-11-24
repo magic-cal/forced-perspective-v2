@@ -57,6 +57,14 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     isInterpolating.current = false;
   }, []);
 
+  // Reset interpolation state (useful when unlinking)
+  const resetInterpolation = useCallback(() => {
+    isInterpolating.current = false;
+    // Set target to current camera position to prevent any jumps
+    targetPosition.current = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    targetRotation.current = { x: camera.rotation.x, y: camera.rotation.y, z: camera.rotation.z };
+  }, [camera]);
+
   // Smooth interpolation loop for audience
   useEffect(() => {
     // Don't interpolate if unlinked (camera is controlled by unlink animation)
@@ -223,5 +231,9 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
      * Stop camera interpolation immediately
      */
     stopInterpolation,
+    /**
+     * Reset interpolation state to current camera position
+     */
+    resetInterpolation,
   };
 }

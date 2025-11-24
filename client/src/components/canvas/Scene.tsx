@@ -24,7 +24,7 @@ export function Scene() {
   const [currentScene, setCurrentScene] = useState<
     "cards" | "landmarks" | "card-deck"
   >("cards");
-  const [participantRotation, setParticipantRotation] = useState<[number, number, number]>([0, 0, 0]);
+  const [headsetIndicatorRotation, setHeadsetIndicatorRotation] = useState<[number, number, number]>([0, 0, 0]);
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
@@ -40,7 +40,7 @@ export function Scene() {
   const viewType = role === 'spectator' ? 'participant' : 'audience';
 
   // Initialize camera sync with unlink state
-  useCameraSync({ 
+  const { resetInterpolation } = useCameraSync({ 
     enabled: true,
     isUnlinked,
     viewType,
@@ -63,10 +63,12 @@ export function Scene() {
   useEffect(() => {
     if (currentState === 'unlink-and-rotate' && viewType === 'audience' && !isUnlinked) {
       debug.trick('Triggering camera unlink animation for audience');
+      // Reset interpolation state before unlinking to prevent jumps
+      resetInterpolation();
       useTrickStore.setState({ isUnlinked: true });
       startUnlinkAnimation().catch(debug.error);
     }
-  }, [currentState, viewType, isUnlinked, startUnlinkAnimation]);
+  }, [currentState, viewType, isUnlinked, startUnlinkAnimation, resetInterpolation]);
   
   // Track participant camera rotation for headset indicator with throttling
   useEffect(() => {
@@ -107,7 +109,28 @@ export function Scene() {
     } else if (viewType === 'audience') {
       // Listen for rotation updates
       const handleRotationUpdate = (rotation: { x: number; y: number; z: number }) => {
-        setParticipantRotation([rotation.x, rotation.y, rotation.z]);
+        // Calculate the headset indicator rotation relative to audience camera
+        // When unlinked, the participant is at the center and should face the audience
+        if (isUnlinked) {
+          // Calculate the rotation needed for the headset to face the audience
+          // Create a temporary object to use lookAt
+          const tempObject = new THREE.Object3D();
+          tempObject.position.set(0, camera.position.y, 0); // Headset at center
+          tempObject.lookAt(camera.position); // Face the audience camera
+          
+          // Extract the Y rotation (yaw) from the lookAt result
+          const baseRotationY = tempObject.rotation.y;
+          
+          // Apply participant's relative head rotation on top of facing the audience
+          setHeadsetIndicatorRotation([
+            rotation.x,
+            baseRotationY + rotation.y,
+            rotation.z
+          ]);
+        } else {
+          // When linked, use the participant's rotation directly
+          setHeadsetIndicatorRotation([rotation.x, rotation.y, rotation.z]);
+        }
       };
       
       socket.on('participant-rotation', handleRotationUpdate);
@@ -118,30 +141,6 @@ export function Scene() {
     
     return undefined;
   }, [socket, viewType, camera]);
-
-  // Start animation for audience after a delay (legacy - can be removed if not needed)
-  useEffect(() => {
-    if (!socket || role !== "audience") return;
-
-    const handleStartAnimation = () => {
-      debug.camera("Starting camera animation for audience");
-      startAnimation({
-        duration: 3000,
-        radius: 5,
-        height: 2,
-        target: [0, 0, 0],
-      }).catch(console.error);
-    };
-
-    // Start animation after 5 seconds
-    const timer = setTimeout(handleStartAnimation, 5000);
-
-    // Cleanup
-    return () => {
-      clearTimeout(timer);
-      socket.off("start-animation", handleStartAnimation);
-    };
-  }, [role, socket, startAnimation]);
 
   // Initialize scene
   useEffect(() => {
@@ -191,7 +190,7 @@ export function Scene() {
       {viewType === 'audience' && isUnlinked && (
         <HeadsetIndicator
           position={[0, 0, 0]}
-          rotation={participantRotation}
+          rotation={headsetIndicatorRotation}
           visible={true}
         />
       )}
