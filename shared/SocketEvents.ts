@@ -69,6 +69,10 @@ export interface ParticipantRotationEventData {
   z: number;
 }
 
+export interface TrickResetEventData {
+  timestamp: number;
+}
+
 // Trick event classes
 export class TrickStateChangedEvent implements ISocketEvent {
   state: string;
@@ -123,6 +127,13 @@ export class ParticipantRotationEvent implements ISocketEvent {
   }
 }
 
+export class TrickResetEvent implements ISocketEvent {
+  timestamp: number;
+  constructor(data: TrickResetEventData) {
+    this.timestamp = data.timestamp;
+  }
+}
+
 export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
@@ -132,6 +143,7 @@ export const socketEvents = {
   "card-forced": CardForcedEvent,
   "unlink-triggered": UnlinkTriggeredEvent,
   "participant-rotation": ParticipantRotationEvent,
+  "trick-reset": TrickResetEvent,
 } as const;
 
 export type SocketEvent = keyof typeof socketEvents;
@@ -154,6 +166,8 @@ export function createResponseFromEvent(socketEvent: SocketEvent, data: any) {
       return new UnlinkTriggeredEvent(data);
     case "participant-rotation":
       return new ParticipantRotationEvent(data);
+    case "trick-reset":
+      return new TrickResetEvent(data);
     default:
       throw new Error(`Unknown socket event ${socketEvent}`);
   }

@@ -130,10 +130,18 @@ export function Card({
   useEffect(() => {
     // Highlight selected or highlighted cards with a more visible glow
     const shouldHighlight = isSelected || isHighlighted;
+    
+    // Apply highlighting to front
     materialsRef.current.front.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
     materialsRef.current.front.emissive = shouldHighlight ? new THREE.Color("#ff9800") : new THREE.Color("#000000");
     materialsRef.current.front.emissiveIntensity = shouldHighlight ? 0.5 : 0;
     materialsRef.current.front.needsUpdate = true;
+    
+    // Apply highlighting to back as well (for audience view)
+    materialsRef.current.back.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
+    materialsRef.current.back.emissive = shouldHighlight ? new THREE.Color("#ff9800") : new THREE.Color("#000000");
+    materialsRef.current.back.emissiveIntensity = shouldHighlight ? 0.5 : 0;
+    materialsRef.current.back.needsUpdate = true;
   }, [isSelected, isHighlighted]);
   
   // Update back material opacity based on viewType

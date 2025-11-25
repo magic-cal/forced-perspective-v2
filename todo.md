@@ -1,3 +1,12 @@
+Notes:
+- Possible issue with reset not full resetting things 
+- Possible issue with facing of VR model (was after reset ) Looks fine when not
+- Next step, reveal of cards and things 
+- Jumping after finish 180 d animation 
+- Storyline, world, 3d images, flocking cards
+- Tests or similar? Not sure how to in 3d? 
+
+
 # Critical path
 
 - [x] View of all cards simple

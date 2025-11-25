@@ -65,6 +65,21 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
     targetRotation.current = { x: camera.rotation.x, y: camera.rotation.y, z: camera.rotation.z };
   }, [camera]);
 
+  // Force broadcast camera state immediately (for spectator)
+  const forceBroadcast = useCallback(() => {
+    if (!socket || role !== 'spectator') return;
+    
+    cameraStateCache.position.x = camera.position.x;
+    cameraStateCache.position.y = camera.position.y;
+    cameraStateCache.position.z = camera.position.z;
+    cameraStateCache.rotation.x = camera.rotation.x;
+    cameraStateCache.rotation.y = camera.rotation.y;
+    cameraStateCache.rotation.z = camera.rotation.z;
+    
+    socket.emit('camera-update', cameraStateCache);
+    console.log('[Camera Sync] Force broadcast camera state');
+  }, [socket, role, camera]);
+
   // Smooth interpolation loop for audience
   useEffect(() => {
     // Don't interpolate if unlinked (camera is controlled by unlink animation)
@@ -235,5 +250,9 @@ export function useCameraSync(options: CameraSyncOptions = {}) {
      * Reset interpolation state to current camera position
      */
     resetInterpolation,
+    /**
+     * Force broadcast camera state immediately (spectator only)
+     */
+    forceBroadcast,
   };
 }

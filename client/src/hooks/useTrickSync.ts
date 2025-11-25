@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useSocket } from '@/sockets/SocketProvider';
 import { useTrickStore } from '@/store/useTrickStore';
 import { useGameStore } from '@/store/gameStore';
+import { useCardSelectionStore } from '@/store/cardSelectionStore';
 import { debug } from '@/config/debug';
 import { TrickState } from '@/types/trick';
 
@@ -28,6 +29,14 @@ export function useTrickSync() {
           state: state.currentState,
           timestamp: Date.now(),
         });
+        
+        // If state changed to 'setup', broadcast reset
+        if (state.currentState === 'setup' && prevState.currentState !== 'setup') {
+          debug.trick('[Magician] Broadcasting trick reset');
+          socket.emit('trick-reset', {
+            timestamp: Date.now(),
+          });
+        }
       }
 
       // Broadcast unlink changes
@@ -82,14 +91,25 @@ export function useTrickSync() {
       }
     };
 
+    const handleTrickReset = () => {
+      debug.trick(`[${role}] Received trick reset`);
+      useTrickStore.getState().resetTrick();
+      
+      // Also reset card selection store
+      useCardSelectionStore.getState().setSelectedCard(null);
+      useCardSelectionStore.getState().setHoveredCard(null);
+    };
+
     socket.on('trick-state-changed', handleStateChange);
     socket.on('unlink-triggered', handleUnlinkTriggered);
     socket.on('card-selected', handleCardSelected);
+    socket.on('trick-reset', handleTrickReset);
 
     return () => {
       socket.off('trick-state-changed', handleStateChange);
       socket.off('unlink-triggered', handleUnlinkTriggered);
       socket.off('card-selected', handleCardSelected);
+      socket.off('trick-reset', handleTrickReset);
     };
   }, [socket, role]);
 }

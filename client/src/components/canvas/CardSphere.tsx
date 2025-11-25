@@ -99,6 +99,24 @@ export function CardSphere({
     }
   }, [trickState, totalCardCount]);
   
+  // Reset all card animation state when returning to setup
+  useEffect(() => {
+    if (trickState === 'setup') {
+      setFlippedCardIndices(new Set());
+      setAnimatingCardIndices(new Map());
+      setForcedCardValue(null);
+      animationStartTimeRef.current = null;
+      
+      // Reset sphere rotation to initial state
+      if (sphereRef.current) {
+        sphereRef.current.children.forEach((row) => {
+          row.rotation.y = 0;
+        });
+        console.log('Card sphere rotations reset to initial state');
+      }
+    }
+  }, [trickState]);
+  
   // Handle lock and reveal state
   useEffect(() => {
     if (trickState === 'lock-and-reveal' && selectedCardId) {

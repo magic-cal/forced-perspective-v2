@@ -9,6 +9,7 @@ import {
   CardForcedEventData,
   UnlinkTriggeredEventData,
   ParticipantRotationEventData,
+  TrickResetEventData,
 } from "../../shared/socketEvents";
 
 export class ForcedPerspectiveServer {
@@ -94,6 +95,13 @@ export class ForcedPerspectiveServer {
         callback: (data: ParticipantRotationEventData, broadcast) => {
           // Don't log this one as it's high frequency
           broadcast("participant-rotation", data);
+        },
+      },
+      {
+        event: "trick-reset",
+        callback: (data: TrickResetEventData, broadcast) => {
+          console.log("[server](trick-reset): %s", JSON.stringify(data));
+          broadcast("trick-reset", data);
         },
       },
     ];

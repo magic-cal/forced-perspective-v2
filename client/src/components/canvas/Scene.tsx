@@ -40,14 +40,14 @@ export function Scene() {
   const viewType = role === 'spectator' ? 'participant' : 'audience';
 
   // Initialize camera sync with unlink state
-  const { resetInterpolation } = useCameraSync({ 
+  const { resetInterpolation, forceBroadcast } = useCameraSync({ 
     enabled: true,
     isUnlinked,
     viewType,
   });
   
   // Initialize camera unlink animation
-  const { startUnlinkAnimation } = useCameraUnlink({
+  const { startUnlinkAnimation, resetUnlinkState } = useCameraUnlink({
     sphereRadius: TRICK_CONFIG.CAMERA.sphereRadius,
     animationDuration: TRICK_CONFIG.ANIMATION_DURATIONS.cameraUnlink,
     onComplete: () => {
@@ -69,6 +69,44 @@ export function Scene() {
       startUnlinkAnimation().catch(debug.error);
     }
   }, [currentState, viewType, isUnlinked, startUnlinkAnimation, resetInterpolation]);
+  
+  // Reset everything when returning to setup state
+  useEffect(() => {
+    if (currentState === 'setup') {
+      debug.trick('Resetting all trick state');
+      
+      // Reset camera unlink state
+      resetUnlinkState();
+      
+      // Reset interpolation
+      resetInterpolation();
+      
+      // Reset headset indicator rotation
+      setHeadsetIndicatorRotation([0, 0, 0]);
+      
+      // Reset camera to initial position
+      const initialPosition = new THREE.Vector3(0, 2, 6);
+      const initialLookAt = new THREE.Vector3(0, 2, 0);
+      
+      camera.position.copy(initialPosition);
+      camera.lookAt(initialLookAt);
+      
+      debug.camera(`Camera reset to initial position: ${initialPosition.x}, ${initialPosition.y}, ${initialPosition.z}`);
+      
+      // For audience, re-enable camera sync by ensuring isUnlinked is false
+      if (viewType === 'audience') {
+        useTrickStore.setState({ isUnlinked: false });
+      }
+      
+      // For spectator, force broadcast the reset camera position
+      if (viewType === 'participant') {
+        // Use setTimeout to ensure state updates have propagated
+        setTimeout(() => {
+          forceBroadcast();
+        }, 100);
+      }
+    }
+  }, [currentState, viewType, resetUnlinkState, resetInterpolation, camera, forceBroadcast]);
   
   // Track participant camera rotation for headset indicator with throttling
   useEffect(() => {
