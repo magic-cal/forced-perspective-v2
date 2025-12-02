@@ -94,10 +94,8 @@ export function CardSphere({
   // Trigger flip animation when entering cards-flipping or final-flip state
   useEffect(() => {
     if ((trickState === 'cards-flipping' || trickState === 'final-flip') && animatingCardIndices.size === 0 && totalCardCount > 0) {
-      // Reset flipped cards for final flip
-      if (trickState === 'final-flip') {
-        setFlippedCardIndices(new Set());
-      }
+      // Don't reset flippedCardIndices for final-flip - cards should maintain their current state
+      // until the animation actually flips them
       startFlipAnimation();
     }
   }, [trickState, totalCardCount]);
@@ -182,7 +180,7 @@ export function CardSphere({
         targetRotation: targetAngle,
       });
     } else {
-      console.log('Could not find selected card group for cardId:', cardId);
+      console.log('Could  snot find selected card group for cardId:', cardId);
     }
   }, [effectiveRotationSpeed]);
   
@@ -250,47 +248,6 @@ export function CardSphere({
 
       const cardId = `${card.suit}-${card.value}-${row}-${i}`;
       const isSelected = cardId === selectedCardId;
-      
-      // Determine if this card should show its BACK (isFlipped=true)
-      // Initially all cards show backs (isFlipped=true)
-      // During cards-flipping animation, cards that have been flipped show faces (isFlipped=false)
-      const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
-      
-      let cardFlipped: boolean;
-      if (trickState === 'setup') {
-        // All cards show faces initially
-        cardFlipped = false;
-      } else if (trickState === 'cards-flipping') {
-        // For spectator: cards that have been animated show backs
-        // For audience: cards remain showing faces
-        if (viewType === 'participant') {
-          cardFlipped = hasBeenFlipped;
-        } else {
-          cardFlipped = false;
-        }
-      } else if (trickState === 'final-flip') {
-        // Final flip: both views flip
-        // For spectator: flip from backs to faces (reverse)
-        // For audience: flip from faces to backs (first flip)
-        if (viewType === 'participant') {
-          // Spectator had backs showing, now show faces after final flip
-          cardFlipped = !hasBeenFlipped;
-        } else {
-          // Audience had faces showing, now show backs after final flip
-          cardFlipped = hasBeenFlipped;
-        }
-      } else if (trickState === 'unlink-and-rotate' || trickState === 'participant-selection') {
-        // All cards show faces (or backs for spectator after flip)
-        cardFlipped = viewType === 'participant' && hasBeenFlipped;
-      } else if (trickState === 'lock-and-reveal') {
-        // Revealed card shows face, others show faces too
-        cardFlipped = viewType === 'participant' && hasBeenFlipped;
-      } else {
-        // Default: show faces
-        cardFlipped = false;
-      }
-      
-      // Apply forced card value if this is the selected card in lock-and-reveal state
       const cardForcedValue = (isSelected && forcedCardValue) ? forcedCardValue : undefined;
       
       rowCards.push(
@@ -298,9 +255,9 @@ export function CardSphere({
           key={`${row}-${i}`} 
           position={[x, y + verticalOffset, z]}
           userData={{ 
-            isFlipped: cardFlipped,
             cardIndex: currentCardIndex,
-            basePosition: new THREE.Vector3(x, y + verticalOffset, z)
+            basePosition: new THREE.Vector3(x, y + verticalOffset, z),
+            isFlipped: false
           }}
         >
           <Card
@@ -441,8 +398,9 @@ export function CardSphere({
         
         // Complete animation
         if (alignProgress >= 1.0) {
-          console.log('Sphere alignment complete');
+          console.log('Sphere alignment complete, transitioning to final-flip');
           sphereAlignmentStartRef.current = null;
+          nextState();
         }
       } else if (!isAligning) {
         // Normal rotation when not aligning
@@ -456,17 +414,16 @@ export function CardSphere({
       sphereRef.current.children.forEach((row) => {
         row.children.forEach((cardGroup) => {
           const currentCardIndex = cardGroup.userData.cardIndex as number;
-          
-          // Get the card's world position
           const cardWorldPos = new THREE.Vector3();
           cardGroup.getWorldPosition(cardWorldPos);
           
-          // Check if this card is animating
           const isAnimating = animatingCardIndices.has(currentCardIndex);
           const hasBeenFlipped = flippedCardIndices.has(currentCardIndex);
+          const isSpectator = viewType === 'participant';
+          const isAudience = viewType === 'audience';
           
+          // Handle animating cards
           if (isAnimating && shouldFlipForView(viewType, trickState)) {
-            // Apply flip animation
             const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
               currentCardIndex, 
               currentTime, 
@@ -474,23 +431,35 @@ export function CardSphere({
               viewType
             );
             
-            // Apply position offset (relative to base position)
-            const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
-            cardGroup.position.copy(basePosition).add(positionOffset);
+            const inStaggerDelay = positionOffset.length() === 0 && rotationProgress === 0 && !isComplete;
             
-            // Start with inward orientation, then add flip rotation
-            calculateInwardOrientation(cardGroup as THREE.Group);
+            // During stagger delay in final-flip, spectator cards maintain backs
+            if (inStaggerDelay && trickState === 'final-flip' && isSpectator && hasBeenFlipped) {
+              calculateInwardOrientation(cardGroup as THREE.Group);
+              cardGroup.rotateY(Math.PI);
+              cardGroup.userData.isFlipped = true;
+            } else {
+              // Animate the card
+              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+              cardGroup.position.copy(basePosition).add(positionOffset);
+              
+              calculateInwardOrientation(cardGroup as THREE.Group);
+              
+              // Calculate flip angle based on flip direction
+              const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
+              const flipAngle = isFinalFlipSpectator 
+                ? Math.PI * (1 - rotationProgress)  // Backs to faces (PI → 0)
+                : rotationProgress * Math.PI;        // Faces to backs (0 → PI)
+              
+              cardGroup.rotateY(flipAngle);
+            }
             
-            // Add the flip rotation (0 to PI) on top of the inward orientation
-            // This rotates the card 180 degrees around its local Y axis
-            const flipAngle = rotationProgress * Math.PI;
-            cardGroup.rotateY(flipAngle);
-            
-            // Mark as flipped when animation completes
+            // Handle animation completion
             if (isComplete) {
               setFlippedCardIndices(prev => {
                 const newSet = new Set(prev);
-                newSet.add(currentCardIndex);
+                const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
+                isFinalFlipSpectator ? newSet.delete(currentCardIndex) : newSet.add(currentCardIndex);
                 return newSet;
               });
               setAnimatingCardIndices(prev => {
@@ -501,43 +470,27 @@ export function CardSphere({
               completedCount++;
             }
             
-            // Update isFlipped based on view and state
-            if (trickState === 'final-flip') {
-              cardGroup.userData.isFlipped = viewType === 'audience'; // Audience shows backs, spectator shows faces
-            } else {
-              cardGroup.userData.isFlipped = viewType === 'participant'; // Show back after flip for spectator
-            }
-          } else if (hasBeenFlipped && viewType === 'participant' && trickState !== 'final-flip') {
-            // Post-flip state for spectator (before final flip): cards have been flipped, so they show backs
-            // Start with face-forward orientation, then add the full 180° flip
-            calculateInwardOrientation(cardGroup as THREE.Group);
-            cardGroup.rotateY(Math.PI); // Add the full flip rotation to show backs
-            cardGroup.userData.isFlipped = true;
-          } else if (hasBeenFlipped && trickState === 'final-flip') {
-            // Final flip completed state
-            calculateInwardOrientation(cardGroup as THREE.Group);
-            if (viewType === 'audience') {
-              // Audience: flip from faces to backs
-              cardGroup.rotateY(Math.PI);
-              cardGroup.userData.isFlipped = true;
-            } else {
-              // Spectator: flip from backs to faces (no additional rotation needed)
-              cardGroup.userData.isFlipped = false;
-            }
-          } else if (viewType === 'audience' && (trickState !== 'setup' && trickState !== 'cards-flipping' && trickState !== 'final-flip')) {
-            // Audience view: cards remain face-forward (no flip during main trick)
-            calculateInwardOrientation(cardGroup as THREE.Group);
-            cardGroup.userData.isFlipped = false;
-            
-            // Reset position to base
+            cardGroup.userData.isFlipped = trickState === 'final-flip' ? isAudience : isSpectator;
+          }
+          // Handle non-animating cards
+          else {
             const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
             if (basePosition) {
               cardGroup.position.copy(basePosition);
             }
-          } else {
-            // Initial state: face-forward (faces visible from center)
+            
             calculateInwardOrientation(cardGroup as THREE.Group);
-            cardGroup.userData.isFlipped = false;
+            
+            // Spectator cards that have been flipped show backs (including during final-flip before animation)
+            // Audience cards during final-flip that haven't been flipped yet show faces
+            const shouldShowBacks = isSpectator && hasBeenFlipped;
+            
+            if (shouldShowBacks) {
+              cardGroup.rotateY(Math.PI);
+              cardGroup.userData.isFlipped = true;
+            } else {
+              cardGroup.userData.isFlipped = false;
+            }
           }
         });
       });

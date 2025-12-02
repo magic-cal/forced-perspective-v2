@@ -24,6 +24,7 @@ const STATE_SEQUENCE: TrickState[] = [
   'unlink-and-rotate',
   'participant-selection',
   'lock-and-reveal',
+  'final-flip',
 ];
 
 export const useTrickStore = create<TrickStore>((set, get) => ({
