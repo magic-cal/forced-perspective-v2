@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useRef, useMemo, useEffect, useState } from "react";
+import { useRef, useMemo, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
 import { Card } from "./Card";
 import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES, ViewType, ForcedValue } from "./Card/types";
@@ -56,6 +56,9 @@ export function CardSphere({
   const [forcedCardValue, setForcedCardValue] = useState<ForcedValue | null>(null);
   const { nextState, lockSelection } = useTrickStore();
   const animationStartTimeRef = useRef<number | null>(null);
+  const sphereAlignmentStartRef = useRef<number | null>(null);
+  const [targetSphereRotation, setTargetSphereRotation] = useState<number | null>(null);
+  const [rowRotationSpeeds, setRowRotationSpeeds] = useState<Map<number, number>>(new Map());
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -106,9 +109,14 @@ export function CardSphere({
       setAnimatingCardIndices(new Map());
       setForcedCardValue(null);
       animationStartTimeRef.current = null;
+      sphereAlignmentStartRef.current = null;
+      setTargetSphereRotation(null);
+      setRowRotationSpeeds(new Map());
       
       // Reset sphere rotation to initial state
       if (sphereRef.current) {
+        sphereRef.current.rotation.y = 0;
+        
         sphereRef.current.children.forEach((row) => {
           row.rotation.y = 0;
         });
@@ -116,6 +124,76 @@ export function CardSphere({
       }
     }
   }, [trickState]);
+  
+  // Helper function to start sphere alignment animation
+  const startSphereAlignment = useCallback((cardId: string) => {
+    console.log('startSphereAlignment called with cardId:', cardId);
+    if (!sphereRef.current) {
+      console.log('sphereRef.current is null, cannot align');
+      return;
+    }
+    
+    // Find the selected card's position in world space
+    let selectedCardGroup: THREE.Object3D | null = null;
+    
+    sphereRef.current.children.forEach((_row) => {
+      _row.children.forEach((cardGroup) => {
+        const cardComponent = cardGroup.children[0] as THREE.Group;
+        const currentCardId = cardComponent?.userData?.id as string;
+        if (currentCardId === cardId) {
+          selectedCardGroup = cardGroup as THREE.Object3D;
+        }
+      });
+    });
+    
+    if (selectedCardGroup) {
+      // Get the card's world position
+      const cardWorldPos = new THREE.Vector3();
+      (selectedCardGroup as THREE.Object3D).getWorldPosition(cardWorldPos);
+      
+      // Calculate the angle needed to rotate the sphere to bring the card in front
+      // "In front" means aligned with the Z-axis (positive Z direction from center)
+      const angleToCard = Math.atan2(cardWorldPos.x, cardWorldPos.z);
+      
+      // We want the opposite side (180 degrees away)
+      let targetAngle = -angleToCard + Math.PI;
+      
+      // Normalize the angle to [-PI, PI] range to ensure shortest path
+      while (targetAngle > Math.PI) targetAngle -= 2 * Math.PI;
+      while (targetAngle < -Math.PI) targetAngle += 2 * Math.PI;
+      
+      // Store the target rotation for the sphere
+      setTargetSphereRotation(targetAngle);
+      
+      // Capture current row rotation speeds
+      const speeds = new Map<number, number>();
+      sphereRef.current.children.forEach((_row, index) => {
+        const direction = index % 2 === 0 ? 1 : -1;
+        speeds.set(index, effectiveRotationSpeed * direction);
+      });
+      setRowRotationSpeeds(speeds);
+      
+      // Start alignment animation
+      sphereAlignmentStartRef.current = Date.now();
+      
+      console.log('Starting sphere alignment animation', {
+        cardPosition: cardWorldPos,
+        angleToCard,
+        targetRotation: targetAngle,
+      });
+    } else {
+      console.log('Could not find selected card group for cardId:', cardId);
+    }
+  }, [effectiveRotationSpeed]);
+  
+  // Handle card selection during participant-selection state
+  useEffect(() => {
+    console.log('Selection effect triggered:', { trickState, selectedCardId });
+    if (trickState === 'participant-selection' && selectedCardId) {
+      console.log('Card selected, aligning sphere');
+      startSphereAlignment(selectedCardId);
+    }
+  }, [selectedCardId, trickState, startSphereAlignment]);
   
   // Handle lock and reveal state
   useEffect(() => {
@@ -128,13 +206,10 @@ export function CardSphere({
       // Apply forced card value
       setForcedCardValue(FORCED_CARD);
       
-      // Transition to next state after reveal animation (1.5 seconds)
-      setTimeout(() => {
-        console.log('Reveal complete');
-        // Could transition to next state or reset here
-      }, 1500);
+      // Re-align sphere in case card position changed
+      startSphereAlignment(selectedCardId);
     }
-  }, [trickState, selectedCardId, lockSelection]);
+  }, [trickState, selectedCardId, lockSelection, startSphereAlignment]);
   
 
 
@@ -338,11 +413,47 @@ export function CardSphere({
       const currentTime = Date.now();
       let completedCount = 0;
       
-      // Rotate each row in alternating directions
-      sphereRef.current.children.forEach((row, index) => {
-        const direction = index % 2 === 0 ? 1 : -1;
-        row.rotation.y += effectiveRotationSpeed * direction * delta;
-
+      // Check if we're aligning the sphere
+      const isAligning = trickState === 'lock-and-reveal' && sphereAlignmentStartRef.current !== null && targetSphereRotation !== null;
+      
+      if (isAligning && sphereAlignmentStartRef.current) {
+        const elapsed = currentTime - sphereAlignmentStartRef.current;
+        const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
+        const totalDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
+        
+        // Phase 1: Slow down row rotations (first half of animation)
+        if (elapsed < slowdownDuration) {
+          const slowdownProgress = elapsed / slowdownDuration;
+          const slowdownFactor = 1 - easeInOutQuad(slowdownProgress);
+          
+          sphereRef.current.children.forEach((row, index) => {
+            const baseSpeed = rowRotationSpeeds.get(index) || 0;
+            row.rotation.y += baseSpeed * slowdownFactor * delta;
+          });
+        }
+        
+        // Phase 2: Rotate entire sphere to align card (throughout animation)
+        const alignProgress = Math.min(elapsed / totalDuration, 1.0);
+        const easedAlignProgress = easeInOutQuad(alignProgress);
+        
+        // Interpolate sphere rotation
+        sphereRef.current.rotation.y = targetSphereRotation * easedAlignProgress;
+        
+        // Complete animation
+        if (alignProgress >= 1.0) {
+          console.log('Sphere alignment complete');
+          sphereAlignmentStartRef.current = null;
+        }
+      } else if (!isAligning) {
+        // Normal rotation when not aligning
+        sphereRef.current.children.forEach((row, index) => {
+          const direction = index % 2 === 0 ? 1 : -1;
+          row.rotation.y += effectiveRotationSpeed * direction * delta;
+        });
+      }
+      
+      // Update card orientations and animations
+      sphereRef.current.children.forEach((row) => {
         row.children.forEach((cardGroup) => {
           const currentCardIndex = cardGroup.userData.cardIndex as number;
           

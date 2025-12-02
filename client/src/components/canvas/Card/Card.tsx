@@ -259,6 +259,7 @@ export function Card({
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
+      userData={{ id }}
     >
       <mesh
         rotation-y={flipRotation}

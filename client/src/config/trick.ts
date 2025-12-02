@@ -10,6 +10,7 @@ export const TRICK_CONFIG = {
     cardFlip: 3000,
     cameraUnlink: 7000,
     cardReveal: 1500,
+    cardMoveToFulcrum: 2000,
   },
 
   CAMERA: {
@@ -18,21 +19,28 @@ export const TRICK_CONFIG = {
     syncThrottleMs: 50,
   },
 
+  SPHERE_ALIGNMENT: {
+    // Duration to slow down rotation and align sphere
+    duration: 4000,
+    // Easing for rotation slowdown
+    rotationSlowdownDuration: 1000,
+  },
+
   CARD_FLIP: {
-    staggerDelayMs: 30,
-    totalDuration: 4000,
+    staggerDelayMs: 20,
+    totalDuration: 3_000,
   },
 
   PERFORMANCE: {
     // Toggle for less resource-intensive rendering
-    lowPerformanceMode: false,
+    lowPerformanceMode: true,
     // Reduced settings for low performance mode
     lowPerf: {
       rotationSpeed: 0,
       maxCardsPerRow: 15,
       animationDurations: {
-        cardFlip: 1500,
-        cameraUnlink: 3000,
+        cardFlip: 1_500,
+        cameraUnlink: 3_000,
         cardReveal: 750,
       },
       staggerDelayMs: 60,
