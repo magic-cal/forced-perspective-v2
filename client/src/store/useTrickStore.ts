@@ -21,7 +21,6 @@ interface TrickStore {
 const STATE_SEQUENCE: TrickState[] = [
   'setup',
   'cards-flipping',
-  'unlink-and-rotate',
   'participant-selection',
   'lock-and-reveal',
   'sphere-aligned',

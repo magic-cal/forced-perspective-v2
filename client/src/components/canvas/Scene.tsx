@@ -78,9 +78,9 @@ export function Scene() {
     },
   });
 
-  // Trigger unlink animation when entering unlink-and-rotate state
+  // Trigger unlink animation when entering cards-flipping state
   useEffect(() => {
-    if (currentState === 'unlink-and-rotate' && viewType === 'audience' && !isUnlinked) {
+    if (currentState === 'cards-flipping' && viewType === 'audience' && !isUnlinked) {
       debug.trick('Triggering camera unlink animation for audience');
       // Reset interpolation state before unlinking to prevent jumps
       resetInterpolation();

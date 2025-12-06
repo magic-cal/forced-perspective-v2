@@ -88,8 +88,7 @@ const StateInfo = styled.div`
 
 const STATE_DESCRIPTIONS: Record<TrickState, string> = {
   'setup': 'Cards face participant. Views synced.',
-  'cards-flipping': 'Cards flipping to backs. Animation in progress.',
-  'unlink-and-rotate': 'Audience rotating 180°. Participant cards flip to faces.',
+  'cards-flipping': 'Cards flipping to backs. Audience rotating 180°. Animation in progress.',
   'participant-selection': 'Participant selecting card. Audience sees backs.',
   'lock-and-reveal': 'Selected card reveals forced value.',
   'sphere-aligned': 'Sphere aligned. Ready for final flip.',
@@ -98,8 +97,7 @@ const STATE_DESCRIPTIONS: Record<TrickState, string> = {
 
 const STATE_LABELS: Record<TrickState, string> = {
   'setup': 'Setup',
-  'cards-flipping': 'Cards Flipping',
-  'unlink-and-rotate': 'Unlink & Rotate',
+  'cards-flipping': 'Cards Flipping & Unlink',
   'participant-selection': 'Participant Selection',
   'lock-and-reveal': 'Lock & Reveal',
   'sphere-aligned': 'Sphere Aligned',

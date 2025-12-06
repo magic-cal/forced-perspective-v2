@@ -99,9 +99,9 @@ export function CardSphere({
     }
   }, [trickState, totalCardCount, viewType]);
   
-  // Freeze card rotations and clear animations for audience when entering unlink-and-rotate
+  // Freeze card rotations and clear animations for audience when entering cards-flipping
   useEffect(() => {
-    if (trickState === 'unlink-and-rotate' && viewType === 'audience') {
+    if (trickState === 'cards-flipping' && viewType === 'audience') {
       // Capture current card rotations before clearing animations
       if (sphereRef.current && animatingCardIndices.size > 0) {
         const rotations = new Map<number, THREE.Quaternion>();
@@ -544,7 +544,6 @@ export function CardSphere({
               }
             } else if (isAudience) {
               const shouldMaintainOrientation = trickState === 'cards-flipping' 
-                || trickState === 'unlink-and-rotate'
                 || trickState === 'participant-selection'
                 || trickState === 'lock-and-reveal'
                 || trickState === 'sphere-aligned';
