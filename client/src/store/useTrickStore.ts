@@ -24,6 +24,7 @@ const STATE_SEQUENCE: TrickState[] = [
   'unlink-and-rotate',
   'participant-selection',
   'lock-and-reveal',
+  'sphere-aligned',
   'final-flip',
 ];
 
@@ -46,14 +47,21 @@ export const useTrickStore = create<TrickStore>((set, get) => ({
     const { currentState } = get();
     const currentIndex = STATE_SEQUENCE.indexOf(currentState);
 
+    console.log('nextState called:', { currentState, currentIndex, sequenceLength: STATE_SEQUENCE.length });
+
     if (currentIndex < STATE_SEQUENCE.length - 1) {
-      const nextState = STATE_SEQUENCE[currentIndex + 1];
-      set({ currentState: nextState });
+      const nextStateValue = STATE_SEQUENCE[currentIndex + 1];
+      console.log('Transitioning to:', nextStateValue);
+      set({ currentState: nextStateValue });
 
       // Auto-unlock when entering participant-selection
-      if (nextState === 'participant-selection') {
+      if (nextStateValue === 'participant-selection') {
         set({ isSelectionLocked: false });
       }
+      
+
+    } else {
+      console.log('Already at final state, cannot progress');
     }
   },
 

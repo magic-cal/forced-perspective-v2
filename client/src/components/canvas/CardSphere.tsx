@@ -59,6 +59,7 @@ export function CardSphere({
   const sphereAlignmentStartRef = useRef<number | null>(null);
   const [targetSphereRotation, setTargetSphereRotation] = useState<number | null>(null);
   const [rowRotationSpeeds, setRowRotationSpeeds] = useState<Map<number, number>>(new Map());
+  const [frozenCardRotations, setFrozenCardRotations] = useState<Map<number, THREE.Quaternion>>(new Map());
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -96,9 +97,33 @@ export function CardSphere({
     if ((trickState === 'cards-flipping' || trickState === 'final-flip') && animatingCardIndices.size === 0 && totalCardCount > 0) {
       // Don't reset flippedCardIndices for final-flip - cards should maintain their current state
       // until the animation actually flips them
+      console.log(`Starting flip animation for ${trickState}, viewType: ${viewType}, totalCards: ${totalCardCount}`);
       startFlipAnimation();
     }
-  }, [trickState, totalCardCount]);
+  }, [trickState, totalCardCount, viewType]);
+  
+  // Freeze card rotations and clear animations for audience when entering unlink-and-rotate
+  useEffect(() => {
+    if (trickState === 'unlink-and-rotate' && viewType === 'audience') {
+      console.log('Freezing card rotations for audience in unlink-and-rotate state');
+      
+      // Capture current card rotations before clearing animations
+      if (sphereRef.current && animatingCardIndices.size > 0) {
+        const rotations = new Map<number, THREE.Quaternion>();
+        sphereRef.current.children.forEach((row) => {
+          row.children.forEach((cardGroup) => {
+            const cardIndex = cardGroup.userData.cardIndex as number;
+            rotations.set(cardIndex, cardGroup.quaternion.clone());
+          });
+        });
+        setFrozenCardRotations(rotations);
+      }
+      
+      // Clear animations
+      setAnimatingCardIndices(new Map());
+      animationStartTimeRef.current = null;
+    }
+  }, [trickState, viewType, animatingCardIndices.size]);
   
   // Reset all card animation state when returning to setup
   useEffect(() => {
@@ -110,6 +135,7 @@ export function CardSphere({
       sphereAlignmentStartRef.current = null;
       setTargetSphereRotation(null);
       setRowRotationSpeeds(new Map());
+      setFrozenCardRotations(new Map());
       
       // Reset sphere rotation to initial state
       if (sphereRef.current) {
@@ -186,7 +212,7 @@ export function CardSphere({
   
   // Handle card selection during participant-selection state
   useEffect(() => {
-    console.log('Selection effect triggered:', { trickState, selectedCardId });
+    console.log('Selection effect triggered:', { trickState, selectedCardId, viewType });
     if (trickState === 'participant-selection' && selectedCardId) {
       console.log('Card selected, aligning sphere');
       startSphereAlignment(selectedCardId);
@@ -198,8 +224,10 @@ export function CardSphere({
     if (trickState === 'lock-and-reveal' && selectedCardId) {
       console.log('Locking selection and applying forced card');
       
-      // Lock the selection
-      lockSelection();
+      // Lock the selection (only once, not per view)
+      if (viewType === 'participant') {
+        lockSelection();
+      }
       
       // Apply forced card value
       setForcedCardValue(FORCED_CARD);
@@ -207,7 +235,7 @@ export function CardSphere({
       // Re-align sphere in case card position changed
       startSphereAlignment(selectedCardId);
     }
-  }, [trickState, selectedCardId, lockSelection, startSphereAlignment]);
+  }, [trickState, selectedCardId, lockSelection, startSphereAlignment, viewType]);
   
 
 
@@ -298,13 +326,16 @@ export function CardSphere({
   };
 
   // Helper function to calculate inward-facing orientation (face visible from center)
-  const calculateInwardOrientation = (cardGroup: THREE.Group) => {
+  const calculateInwardOrientation = (cardGroup: THREE.Group, shouldFaceOutward: boolean = false) => {
     const centerPosition = new THREE.Vector3(0, 0, 0);
     
     // Make card face inward (toward center)
     cardGroup.lookAt(centerPosition);
     
-    // No additional rotation - cards show faces to viewers at center
+    // If shouldFaceOutward is true, rotate 180 degrees to show backs to center (faces to outside)
+    if (shouldFaceOutward) {
+      cardGroup.rotateY(Math.PI);
+    }
   };
 
   // Animate card flip with three phases: forward, rotate, return
@@ -314,7 +345,7 @@ export function CardSphere({
     cardWorldPos: THREE.Vector3,
     currentViewType: ViewType
   ): { positionOffset: THREE.Vector3; rotationProgress: number; isComplete: boolean } => {
-    // Skip animation for audience during main flip
+    // Skip animation for audience during main flip (but not during final-flip)
     if (currentViewType === 'audience' && trickState === 'cards-flipping') {
       return { positionOffset: new THREE.Vector3(0, 0, 0), rotationProgress: 0, isComplete: false };
     }
@@ -370,10 +401,18 @@ export function CardSphere({
       const currentTime = Date.now();
       let completedCount = 0;
       
-      // Check if we're aligning the sphere
+      // Check if we're aligning the sphere (during lock-and-reveal state only)
       const isAligning = trickState === 'lock-and-reveal' && sphereAlignmentStartRef.current !== null && targetSphereRotation !== null;
       
       if (isAligning && sphereAlignmentStartRef.current) {
+        // Debug: log alignment progress occasionally
+        if (Math.random() < 0.01) {
+          console.log('Aligning sphere...', { 
+            viewType, 
+            elapsed: currentTime - sphereAlignmentStartRef.current,
+            targetRotation: targetSphereRotation 
+          });
+        }
         const elapsed = currentTime - sphereAlignmentStartRef.current;
         const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
         const totalDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
@@ -398,9 +437,13 @@ export function CardSphere({
         
         // Complete animation
         if (alignProgress >= 1.0) {
-          console.log('Sphere alignment complete, transitioning to final-flip');
+          console.log('Sphere alignment complete, transitioning to sphere-aligned', { viewType, willTransition: viewType === 'participant' });
           sphereAlignmentStartRef.current = null;
-          nextState();
+          // Only transition state once (from spectator view)
+          if (viewType === 'participant') {
+            console.log('Calling nextState() to transition from lock-and-reveal to sphere-aligned');
+            nextState(); // Transitions to 'sphere-aligned'
+          }
         }
       } else if (!isAligning) {
         // Normal rotation when not aligning
@@ -423,7 +466,7 @@ export function CardSphere({
           const isAudience = viewType === 'audience';
           
           // Handle animating cards
-          if (isAnimating && shouldFlipForView(viewType, trickState)) {
+          if (isAnimating) {
             const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
               currentCardIndex, 
               currentTime, 
@@ -431,14 +474,39 @@ export function CardSphere({
               viewType
             );
             
+            // Skip rendering animation for audience during cards-flipping (they don't flip yet)
+            const shouldSkipAnimation = isAudience && trickState === 'cards-flipping';
+            
+            // Debug: log first card animation for audience
+            if (currentCardIndex === 0 && isAudience && trickState === 'final-flip' && rotationProgress > 0) {
+              console.log('Audience card 0 animating:', { rotationProgress, positionOffset: positionOffset.length() });
+            }
+            
             const inStaggerDelay = positionOffset.length() === 0 && rotationProgress === 0 && !isComplete;
             
-            // During stagger delay in final-flip, spectator cards maintain backs
-            if (inStaggerDelay && trickState === 'final-flip' && isSpectator && hasBeenFlipped) {
-              calculateInwardOrientation(cardGroup as THREE.Group);
-              cardGroup.rotateY(Math.PI);
-              cardGroup.userData.isFlipped = true;
-            } else {
+            // If we should skip animation (audience during initial flip), just maintain current state
+            if (shouldSkipAnimation) {
+              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+              cardGroup.position.copy(basePosition);
+              // Don't recalculate orientation - keep whatever orientation the card already has
+              // This prevents cards from appearing to flip as the sphere rotates
+              cardGroup.userData.isFlipped = false;
+            }
+            // During stagger delay in final-flip, maintain current state to prevent flash
+            else if (inStaggerDelay && trickState === 'final-flip') {
+              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+              cardGroup.position.copy(basePosition);
+              
+              if (isSpectator && hasBeenFlipped) {
+                // Spectator: keep showing backs (face outward)
+                calculateInwardOrientation(cardGroup as THREE.Group, true);
+                cardGroup.userData.isFlipped = true;
+              } else if (isAudience && !hasBeenFlipped) {
+                // Audience: keep showing backs (face inward) until they flip
+                calculateInwardOrientation(cardGroup as THREE.Group, false);
+                cardGroup.userData.isFlipped = false;
+              }
+            } else if (!inStaggerDelay && !shouldSkipAnimation) {
               // Animate the card
               const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
               cardGroup.position.copy(basePosition).add(positionOffset);
@@ -447,19 +515,50 @@ export function CardSphere({
               
               // Calculate flip angle based on flip direction
               const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
-              const flipAngle = isFinalFlipSpectator 
-                ? Math.PI * (1 - rotationProgress)  // Backs to faces (PI → 0)
-                : rotationProgress * Math.PI;        // Faces to backs (0 → PI)
+              const isFinalFlipAudience = trickState === 'final-flip' && isAudience;
+              const isInitialFlipSpectator = trickState === 'cards-flipping' && isSpectator;
+              
+              let flipAngle: number;
+              if (isFinalFlipSpectator) {
+                // Spectator: Backs (outward) to faces (inward) - PI → 0
+                flipAngle = Math.PI * (1 - rotationProgress);
+              } else if (isFinalFlipAudience) {
+                // Audience: Backs (outward) to faces (inward) - PI → 0
+                // Wait, audience should go from backs to... still backs but facing inward now
+                // Actually: audience starts with backs facing outward (PI), ends with faces facing inward (0)
+                // No wait: audience sees backs because cards face inward. After flip, cards face outward showing faces to audience
+                // Let me reconsider: audience is outside. Cards face inward = audience sees backs
+                // After final flip: cards should face outward = audience sees faces
+                // So: start at 0 (inward), flip to PI (outward)
+                flipAngle = rotationProgress * Math.PI;
+              } else if (isInitialFlipSpectator) {
+                // Initial flip for spectator: Faces (inward) to backs (outward) - 0 → PI
+                flipAngle = rotationProgress * Math.PI;
+              } else {
+                // Default: 0 → PI
+                flipAngle = rotationProgress * Math.PI;
+              }
               
               cardGroup.rotateY(flipAngle);
             }
             
             // Handle animation completion
-            if (isComplete) {
+            if (isComplete && !shouldSkipAnimation) {
               setFlippedCardIndices(prev => {
                 const newSet = new Set(prev);
                 const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
-                isFinalFlipSpectator ? newSet.delete(currentCardIndex) : newSet.add(currentCardIndex);
+                const isFinalFlipAudience = trickState === 'final-flip' && isAudience;
+                
+                if (isFinalFlipSpectator) {
+                  // Spectator flips back to faces, remove from flipped set
+                  newSet.delete(currentCardIndex);
+                } else if (isFinalFlipAudience) {
+                  // Audience flips to backs, add to flipped set
+                  newSet.add(currentCardIndex);
+                } else {
+                  // Initial flip to backs, add to flipped set
+                  newSet.add(currentCardIndex);
+                }
                 return newSet;
               });
               setAnimatingCardIndices(prev => {
@@ -468,9 +567,15 @@ export function CardSphere({
                 return newMap;
               });
               completedCount++;
+            } else if (shouldSkipAnimation && isComplete) {
+              // For audience during initial flip, just clear the animation without updating flipped state
+              setAnimatingCardIndices(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(currentCardIndex);
+                return newMap;
+              });
+              completedCount++;
             }
-            
-            cardGroup.userData.isFlipped = trickState === 'final-flip' ? isAudience : isSpectator;
           }
           // Handle non-animating cards
           else {
@@ -479,17 +584,46 @@ export function CardSphere({
               cardGroup.position.copy(basePosition);
             }
             
-            calculateInwardOrientation(cardGroup as THREE.Group);
+            // Determine orientation based on view and flip state
+            // Spectator (center): sees faces when cards face inward, backs when cards face outward
+            // Audience (outside): sees backs when cards face inward, faces when cards face outward
             
-            // Spectator cards that have been flipped show backs (including during final-flip before animation)
-            // Audience cards during final-flip that haven't been flipped yet show faces
-            const shouldShowBacks = isSpectator && hasBeenFlipped;
-            
-            if (shouldShowBacks) {
-              cardGroup.rotateY(Math.PI);
-              cardGroup.userData.isFlipped = true;
-            } else {
-              cardGroup.userData.isFlipped = false;
+            if (isSpectator) {
+              // Spectator logic
+              if (hasBeenFlipped) {
+                // After initial flip, before final flip: show backs (face outward)
+                calculateInwardOrientation(cardGroup as THREE.Group, true);
+                cardGroup.userData.isFlipped = true;
+              } else {
+                // Initial state or after final flip: show faces (face inward)
+                calculateInwardOrientation(cardGroup as THREE.Group, false);
+                cardGroup.userData.isFlipped = false;
+              }
+            } else if (isAudience) {
+              // Audience logic
+              // During cards-flipping and unlink-and-rotate, don't recalculate orientation at all
+              // This prevents cards from changing orientation as the sphere rotates
+              const shouldMaintainOrientation = trickState === 'cards-flipping' || trickState === 'unlink-and-rotate';
+              
+              if (shouldMaintainOrientation && trickState === 'unlink-and-rotate') {
+                // Use frozen rotation if available
+                const frozenRotation = frozenCardRotations.get(currentCardIndex);
+                if (frozenRotation) {
+                  cardGroup.quaternion.copy(frozenRotation);
+                }
+              } else if (!shouldMaintainOrientation) {
+                // Only update orientation when NOT in cards-flipping or unlink-and-rotate state
+                if (hasBeenFlipped) {
+                  // After final flip: show faces (face outward)
+                  calculateInwardOrientation(cardGroup as THREE.Group, true);
+                  cardGroup.userData.isFlipped = true;
+                } else {
+                  // Before final flip: show backs (face inward, audience sees backs from outside)
+                  calculateInwardOrientation(cardGroup as THREE.Group, false);
+                  cardGroup.userData.isFlipped = false;
+                }
+              }
+              // If shouldMaintainOrientation is true (cards-flipping), don't touch the card orientation at all
             }
           }
         });

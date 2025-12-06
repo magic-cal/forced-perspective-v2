@@ -92,6 +92,8 @@ const STATE_DESCRIPTIONS: Record<TrickState, string> = {
   'unlink-and-rotate': 'Audience rotating 180°. Participant cards flip to faces.',
   'participant-selection': 'Participant selecting card. Audience sees backs.',
   'lock-and-reveal': 'Selected card reveals forced value.',
+  'sphere-aligned': 'Sphere aligned. Ready for final flip.',
+  'final-flip': 'Cards flipping to reveal. Animation in progress.',
 };
 
 const STATE_LABELS: Record<TrickState, string> = {
@@ -100,6 +102,8 @@ const STATE_LABELS: Record<TrickState, string> = {
   'unlink-and-rotate': 'Unlink & Rotate',
   'participant-selection': 'Participant Selection',
   'lock-and-reveal': 'Lock & Reveal',
+  'sphere-aligned': 'Sphere Aligned',
+  'final-flip': 'Final Flip',
 };
 
 export function TrickControls() {
@@ -107,11 +111,14 @@ export function TrickControls() {
   const role = useGameStore((s) => s.role);
 
   const canProgress = () => {
-    // Can't progress from lock-and-reveal (end state)
-    if (currentState === 'lock-and-reveal') return false;
+    // Can't progress from final-flip (end state)
+    if (currentState === 'final-flip') return false;
     
     // Need a selected card to progress from participant-selection
     if (currentState === 'participant-selection' && !selectedCardId) return false;
+    
+    // Sphere-aligned progresses automatically after alignment completes
+    // But allow manual progress as well
     
     return true;
   };
@@ -149,7 +156,7 @@ export function TrickControls() {
             disabled={!canProgress()}
             title={!canProgress() ? 'Cannot progress from current state' : 'Progress to next state'}
           >
-            {currentState === 'lock-and-reveal' ? 'Complete' : 'Next State'}
+            {currentState === 'final-flip' ? 'Complete' : 'Next State'}
           </Button>
           <Button 
             variant="secondary" 

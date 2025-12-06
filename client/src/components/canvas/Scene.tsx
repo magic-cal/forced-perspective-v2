@@ -34,10 +34,35 @@ export function Scene() {
   const currentState = useTrickStore ((s) => s.currentState);
   const isUnlinked = useTrickStore((s) => s.isUnlinked);
   const nextState = useTrickStore((s) => s.nextState);
+  const setState = useTrickStore((s) => s.setState);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   
   // Determine view type based on role
   const viewType = role === 'spectator' ? 'participant' : 'audience';
+  
+  // Sync trick state via socket
+  useEffect(() => {
+    if (!socket) return;
+    
+    // Broadcast state changes (magician/spectator only)
+    if (role === 'magician' || role === 'spectator') {
+      socket.emit('trick-state-change', { state: currentState });
+      console.log('Broadcasting trick state:', currentState);
+    }
+    
+    // Listen for state changes (audience only)
+    if (role === 'audience') {
+      const handleStateChange = (data: { state: TrickState }) => {
+        console.log('Received trick state:', data.state);
+        setState(data.state);
+      };
+      
+      socket.on('trick-state-change', handleStateChange);
+      return () => {
+        socket.off('trick-state-change', handleStateChange);
+      };
+    }
+  }, [socket, currentState, role, setState]);
 
   // Initialize camera sync with unlink state
   const { resetInterpolation, forceBroadcast } = useCameraSync({ 

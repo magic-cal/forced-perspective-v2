@@ -1,3 +1,17 @@
+1 Dec - 
+- Basically we have a POC
+- Performance improvements
+    - Images and stuff could be cached 
+    - Refresh time is lots 
+- VR support 
+- Some minor bugs, refresh fixes 
+- Controlls need be useable by different people 
+- Too many states 
+- Maybe some checkpoints
+- Sphere alignment happens at different times for A and S 
+- State changes progress too quickly automatically
+
+
 Notes:
 - Possible issue with reset not full resetting things 
 - Possible issue with facing of VR model (was after reset ) Looks fine when not

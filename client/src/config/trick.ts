@@ -21,9 +21,9 @@ export const TRICK_CONFIG = {
 
   SPHERE_ALIGNMENT: {
     // Duration to slow down rotation and align sphere
-    duration: 4000,
+    duration: 2000,
     // Easing for rotation slowdown
-    rotationSlowdownDuration: 1000,
+    rotationSlowdownDuration: 500,
   },
 
   CARD_FLIP: {

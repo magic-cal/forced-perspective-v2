@@ -4,6 +4,7 @@ export type TrickState =
   | 'unlink-and-rotate'
   | 'participant-selection'
   | 'lock-and-reveal'
+  | 'sphere-aligned'
   | 'final-flip';
 
 export type ViewType = 'participant' | 'audience';
