@@ -364,6 +364,12 @@ export function CardSphere({
       // Check if we're aligning the sphere (during lock-and-reveal state only)
       const isAligning = trickState === 'lock-and-reveal' && sphereAlignmentStartRef.current !== null && targetSphereRotation !== null;
       
+      // Stop rotation during participant-selection and all subsequent states
+      const shouldStopRotation = trickState === 'participant-selection' 
+        || trickState === 'lock-and-reveal' 
+        || trickState === 'sphere-aligned' 
+        || trickState === 'final-flip';
+      
       if (isAligning && sphereAlignmentStartRef.current) {
         const elapsed = currentTime - sphereAlignmentStartRef.current;
         const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
@@ -395,8 +401,8 @@ export function CardSphere({
             nextState();
           }
         }
-      } else if (!isAligning) {
-        // Normal rotation when not aligning
+      } else if (!isAligning && !shouldStopRotation) {
+        // Normal rotation when not aligning and not in participant-selection
         sphereRef.current.children.forEach((row, index) => {
           const direction = index % 2 === 0 ? 1 : -1;
           row.rotation.y += effectiveRotationSpeed * direction * delta;
