@@ -11,19 +11,17 @@ import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
 import { HeadsetIndicator } from "./HeadsetIndicator";
 import { useCameraSync } from "@/hooks/useCameraSync";
-import { useCameraAnimation } from "@/hooks/useCameraAnimation";
 import { useCameraUnlink } from "@/hooks/useCameraUnlink";
 import { useGameStore } from "@/store/gameStore";
 import { useSocket } from "@/sockets/SocketProvider";
 import { useTrickStore } from "@/store/useTrickStore";
+import { TrickState } from "@/types/trick";
 import { TRICK_CONFIG } from "@/config/trick";
 
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
-  const [currentScene, setCurrentScene] = useState<
-    "cards" | "landmarks" | "card-deck"
-  >("cards");
+  const [currentScene] = useState<"cards" | "landmarks" | "card-deck">("cards");
   const [headsetIndicatorRotation, setHeadsetIndicatorRotation] = useState<[number, number, number]>([0, 0, 0]);
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
@@ -31,9 +29,8 @@ export function Scene() {
 
   const role = useGameStore((s) => s.role);
   const socket = useSocket();
-  const currentState = useTrickStore ((s) => s.currentState);
+  const currentState = useTrickStore((s) => s.currentState);
   const isUnlinked = useTrickStore((s) => s.isUnlinked);
-  const nextState = useTrickStore((s) => s.nextState);
   const setState = useTrickStore((s) => s.setState);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   
@@ -42,18 +39,17 @@ export function Scene() {
   
   // Sync trick state via socket
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) return undefined;
     
     // Broadcast state changes (magician/spectator only)
     if (role === 'magician' || role === 'spectator') {
       socket.emit('trick-state-change', { state: currentState });
-      console.log('Broadcasting trick state:', currentState);
+      return undefined;
     }
     
     // Listen for state changes (audience only)
     if (role === 'audience') {
       const handleStateChange = (data: { state: TrickState }) => {
-        console.log('Received trick state:', data.state);
         setState(data.state);
       };
       
@@ -62,6 +58,8 @@ export function Scene() {
         socket.off('trick-state-change', handleStateChange);
       };
     }
+    
+    return undefined;
   }, [socket, currentState, role, setState]);
 
   // Initialize camera sync with unlink state
@@ -76,13 +74,9 @@ export function Scene() {
     sphereRadius: TRICK_CONFIG.CAMERA.sphereRadius,
     animationDuration: TRICK_CONFIG.ANIMATION_DURATIONS.cameraUnlink,
     onComplete: () => {
-      debug.trick('Camera unlink complete, transitioning to next state');
-      nextState();
+      debug.trick('Camera unlink complete');
     },
   });
-
-  // Initialize camera animation
-  const { startAnimation } = useCameraAnimation();
 
   // Trigger unlink animation when entering unlink-and-rotate state
   useEffect(() => {
@@ -115,8 +109,6 @@ export function Scene() {
       
       camera.position.copy(initialPosition);
       camera.lookAt(initialLookAt);
-      
-      debug.camera(`Camera reset to initial position: ${initialPosition.x}, ${initialPosition.y}, ${initialPosition.z}`);
       
       // For audience, re-enable camera sync by ensuring isUnlinked is false
       if (viewType === 'audience') {
@@ -169,29 +161,26 @@ export function Scene() {
           cancelAnimationFrame(animationFrameId);
         }
       };
-    } else if (viewType === 'audience') {
+    }
+    
+    if (viewType === 'audience') {
       // Listen for rotation updates
       const handleRotationUpdate = (rotation: { x: number; y: number; z: number }) => {
         // Calculate the headset indicator rotation relative to audience camera
-        // When unlinked, the participant is at the center and should face the audience
         if (isUnlinked) {
           // Calculate the rotation needed for the headset to face the audience
-          // Create a temporary object to use lookAt
           const tempObject = new THREE.Object3D();
-          tempObject.position.set(0, camera.position.y, 0); // Headset at center
-          tempObject.lookAt(camera.position); // Face the audience camera
+          tempObject.position.set(0, camera.position.y, 0);
+          tempObject.lookAt(camera.position);
           
-          // Extract the Y rotation (yaw) from the lookAt result
           const baseRotationY = tempObject.rotation.y;
           
-          // Apply participant's relative head rotation on top of facing the audience
           setHeadsetIndicatorRotation([
             rotation.x,
             baseRotationY + rotation.y,
             rotation.z
           ]);
         } else {
-          // When linked, use the participant's rotation directly
           setHeadsetIndicatorRotation([rotation.x, rotation.y, rotation.z]);
         }
       };
@@ -203,7 +192,7 @@ export function Scene() {
     }
     
     return undefined;
-  }, [socket, viewType, camera]);
+  }, [socket, viewType, camera, isUnlinked]);
 
   // Initialize scene
   useEffect(() => {
