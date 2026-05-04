@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "concurrently": "^8.2.0",
+    "express": "^5.2.1",
     "nodemon": "^3.0.1",
     "socket.io": "^4.7.2",
     "ts-node-dev": "^2.0.0",
