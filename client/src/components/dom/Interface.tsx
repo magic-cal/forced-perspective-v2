@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useUserRole } from "@/store/gameStore";
 import { debug } from "@/config/debug";
 import { useTrickStore } from "@/store/useTrickStore";
@@ -7,7 +7,29 @@ import { useSocket } from "@/sockets/SocketProvider";
 export function Interface() {
   const [role, setRole] = useUserRole();
   const socket = useSocket();
-  const isConnected = socket?.connected ?? false;
+  const [isConnected, setIsConnected] = useState<boolean>(socket?.connected ?? false);
+
+  useEffect(() => {
+    if (!socket) {
+      setIsConnected(false);
+      return;
+    }
+
+    // Keep local connected state in sync with socket events
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+
+    // initialize from current socket state
+    setIsConnected(socket.connected ?? false);
+
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+    };
+  }, [socket]);
   const currentState = useTrickStore((s) => s.currentState);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   const isUnlinked = useTrickStore((s) => s.isUnlinked);

@@ -10,7 +10,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    const internalSocket = io("http://localhost:8080");
+    // Connect to same origin so Vite proxy (/socket.io) forwards to the backend service
+    const internalSocket = io();
 
     internalSocket.on("connect", () => {
       debug.socket("Socket connected", internalSocket.id);

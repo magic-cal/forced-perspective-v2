@@ -13,9 +13,22 @@ export default defineConfig({
   plugins: [react(), mkcert()],
 
   server: {
-    port: 5173,
-    https: true,
+    port: Number(process.env.PORT) || 5173,
+    https: false,
     host: true,
+    proxy: (() => {
+      const backendPort = process.env.VITE_BACKEND_PORT || process.env.BACKEND_PORT || "8080";
+      const backendHost = process.env.VITE_BACKEND_HOST || "localhost";
+      return {
+        // Proxy Socket.IO requests to the backend service (runs HTTP on localhost by default)
+        "/socket.io": {
+          target: `http://${backendHost}:${backendPort}`,
+          ws: true,
+          changeOrigin: true,
+          secure: false,
+        },
+      };
+    })(),
   },
 
   resolve: {

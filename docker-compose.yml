@@ -1,0 +1,35 @@
+services:
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - FRONTEND_PORT=${FRONTEND_PORT}
+    volumes:
+      - ./client:/app:cached
+      - /app/node_modules
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    environment:
+      - NODE_ENV=development
+      - PORT=${FRONTEND_PORT}
+      - VITE_BACKEND_PORT=${BACKEND_PORT}
+      - VITE_BACKEND_HOST=backend
+    depends_on:
+      - backend
+    command: ["sh", "-c", "npm run dev -- --port ${FRONTEND_PORT}"]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        - BACKEND_PORT=${BACKEND_PORT}
+    volumes:
+      - ./backend:/app:cached
+      - /app/node_modules
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    environment:
+      - NODE_ENV=development
+      - PORT=${BACKEND_PORT}
