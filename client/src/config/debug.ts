@@ -36,3 +36,34 @@ export const perf = {
     }
   },
 };
+
+/**
+ * UI toggle for debug panels/buttons. Hidden by default.
+ * Enable by setting VITE_DEBUG_UI=1 (or "true") at build/runtime or by
+ * adding a URL parameter, e.g. `?debug=1` or `?debug=true`.
+ */
+export const SHOW_DEBUG_UI = (() => {
+  try {
+    // Check Vite env flags (available at build time)
+    const env = (import.meta as any)?.env || {};
+    const envFlag =
+      env.VITE_DEBUG_UI === "1" || env.VITE_DEBUG_UI === "true" ||
+      env.VITE_SHOW_DEBUG === "1" || env.VITE_SHOW_DEBUG === "true";
+
+    // Allow enabling via URL param at runtime for quick testing
+    const urlFlag =
+      typeof window !== "undefined" &&
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        return (
+          params.get("debug") === "1" ||
+          params.get("debug") === "true" ||
+          params.has("debug")
+        );
+      })();
+
+    return !!(envFlag || urlFlag);
+  } catch (e) {
+    return false;
+  }
+})();

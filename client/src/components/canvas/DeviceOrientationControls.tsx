@@ -1,5 +1,6 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { SHOW_DEBUG_UI } from "@/config/debug";
 import * as THREE from "three";
 
 interface DeviceOrientationControlsProps {
@@ -187,6 +188,8 @@ export function DeviceOrientationControls({
 
   // Create debug overlay using HTML elements
   useEffect(() => {
+    if (!SHOW_DEBUG_UI) return;
+
     if (!debugMode) {
       const existingOverlay = document.getElementById(
         "device-orientation-debug"
@@ -338,8 +341,10 @@ export function DeviceOrientationControls({
     };
   }, [debugMode, testAxis, currentValues, initialValues]);
 
-  // Create debug button
+  // Create debug button (only when debug UI is enabled)
   useEffect(() => {
+    if (!SHOW_DEBUG_UI) return;
+
     if (debugMode) {
       return;
     }

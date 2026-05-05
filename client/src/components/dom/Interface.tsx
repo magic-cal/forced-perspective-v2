@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { useUserRole } from "@/store/gameStore";
-import { debug } from "@/config/debug";
-import { useTrickStore } from "@/store/useTrickStore";
+import { debug, SHOW_DEBUG_UI } from "@/config/debug";
 import { useSocket } from "@/sockets/SocketProvider";
+import { useUserRole } from "@/store/gameStore";
+import { useTrickStore } from "@/store/useTrickStore";
+import { useEffect, useState } from "react";
 
 export function Interface() {
   const [role, setRole] = useUserRole();
@@ -47,14 +47,23 @@ export function Interface() {
 
   return (
     <div className="interface">
+      {SHOW_DEBUG_UI && (
+        <div
+          className={`interface__status ${
+            isConnected ? "interface__status--connected" : ""
+          }`}
+        >
+          Status: {isConnected ? "Connected" : "Disconnected"}
+        </div>
+      )}
+
+      {/* subtle connection indicator */}
       <div
-        className={`interface__status ${
-          isConnected ? "interface__status--connected" : ""
-        }`}
-      >
-        Status: {isConnected ? "Connected" : "Disconnected"}
-      </div>
-      <div className="interface__role-select">
+        className={`connection-indicator ${isConnected ? "connected" : "disconnected"}`}
+        aria-hidden="true"
+      />
+      {SHOW_DEBUG_UI && (
+        <div className="interface__role-select">
         <span>Role: </span>
         <button
           onClick={() => setRole("magician")}
@@ -78,27 +87,30 @@ export function Interface() {
           {role ? `Current: ${role}` : "(not selected)"}
         </span>
       </div>
-      
-      {/* Debug Panel */}
-      <div className="interface__debug">
-        <div className="interface__debug-title">Debug Info</div>
-        <div className="interface__debug-item">
-          <span className="interface__debug-label">State:</span>
-          <span className="interface__debug-value">{currentState}</span>
+      )}
+
+      {/* Debug Panel (hidden by default) */}
+      {SHOW_DEBUG_UI && (
+        <div className="interface__debug">
+          <div className="interface__debug-title">Debug Info</div>
+          <div className="interface__debug-item">
+            <span className="interface__debug-label">State:</span>
+            <span className="interface__debug-value">{currentState}</span>
+          </div>
+          <div className="interface__debug-item">
+            <span className="interface__debug-label">Unlinked:</span>
+            <span className="interface__debug-value">{isUnlinked ? 'Yes' : 'No'}</span>
+          </div>
+          <div className="interface__debug-item">
+            <span className="interface__debug-label">Selected Card:</span>
+            <span className="interface__debug-value">{selectedCardId || 'None'}</span>
+          </div>
+          <div className="interface__debug-item">
+            <span className="interface__debug-label">Selection Locked:</span>
+            <span className="interface__debug-value">{isSelectionLocked ? 'Yes' : 'No'}</span>
+          </div>
         </div>
-        <div className="interface__debug-item">
-          <span className="interface__debug-label">Unlinked:</span>
-          <span className="interface__debug-value">{isUnlinked ? 'Yes' : 'No'}</span>
-        </div>
-        <div className="interface__debug-item">
-          <span className="interface__debug-label">Selected Card:</span>
-          <span className="interface__debug-value">{selectedCardId || 'None'}</span>
-        </div>
-        <div className="interface__debug-item">
-          <span className="interface__debug-label">Selection Locked:</span>
-          <span className="interface__debug-value">{isSelectionLocked ? 'Yes' : 'No'}</span>
-        </div>
-      </div>
+      )}
 
       <style>{`
         .interface {
@@ -209,6 +221,25 @@ export function Interface() {
           font-size: 12px;
           font-weight: 600;
           font-family: monospace;
+        }
+        .connection-indicator {
+          position: fixed;
+          left: 10px;
+          top: 10px;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: rgba(81, 207, 102, 0.18);
+          box-shadow: 0 0 6px rgba(81, 207, 102, 0.08);
+          z-index: 1100;
+          pointer-events: none;
+          transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+
+        .connection-indicator.disconnected {
+          background: rgba(255, 107, 107, 0.9);
+          box-shadow: 0 0 6px rgba(255, 107, 107, 0.35);
+          transform: scale(1.1);
         }
       `}</style>
     </div>

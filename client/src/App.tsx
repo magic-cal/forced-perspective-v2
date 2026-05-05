@@ -2,6 +2,7 @@ import { Canvas } from "@/components/canvas/Canvas";
 import { Interface } from "@/components/dom/Interface";
 import { Menu } from "@/components/dom/Menu";
 import { TrickControls } from "@/components/dom/TrickControls";
+import { SHOW_DEBUG_UI } from "@/config/debug";
 import { useGameStore } from "@/store/gameStore";
 import { useTrickSync } from "@/hooks/useTrickSync";
 
@@ -18,10 +19,10 @@ export default function App() {
 
       {/* DOM Content - UI Overlay */}
       <Interface />
-      <Menu />
-      
-      {/* Trick Controls - Handles its own visibility */}
-      <TrickControls />
+      {SHOW_DEBUG_UI && <Menu />}
+
+      {/* Trick Controls - shown only in dev/debug UI */}
+      {SHOW_DEBUG_UI && <TrickControls />}
 
       <style>{`
         .app-container {
