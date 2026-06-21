@@ -138,12 +138,17 @@ export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
   "camera-update": CameraChangedEvent,
-  "trick-state-changed": TrickStateChangedEvent,
+  // client emits 'trick-state-change' (no 'd') — registered under that name
+  "trick-state-change": TrickStateChangedEvent,
   "card-selected": CardSelectedEvent,
   "card-forced": CardForcedEvent,
   "unlink-triggered": UnlinkTriggeredEvent,
   "participant-rotation": ParticipantRotationEvent,
   "trick-reset": TrickResetEvent,
+  "landmark-index": MouseDownEvent,   // reuse generic shape: { index, senderId }
+  "landmark-finish": MouseDownEvent,
+  "gallery-skip": MouseDownEvent,
+  "pointer-hit": MouseDownEvent,
 } as const;
 
 export type SocketEvent = keyof typeof socketEvents;
@@ -156,7 +161,7 @@ export function createResponseFromEvent(socketEvent: SocketEvent, data: any) {
       return new CameraChangedEvent(data);
     case "mouse-down":
       return new MouseDownEvent(data);
-    case "trick-state-changed":
+    case "trick-state-change":
       return new TrickStateChangedEvent(data);
     case "card-selected":
       return new CardSelectedEvent(data);

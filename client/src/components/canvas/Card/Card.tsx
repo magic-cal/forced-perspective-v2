@@ -1,11 +1,16 @@
-import { useRef, useMemo, useEffect } from "react";
+import { memo, useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
 import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
 import { FlipState, ForcedValue, ViewType } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
-import { useTrickStore } from "@/store/useTrickStore";
-import { useSocket } from "@/sockets/SocketProvider";
+
+// One dark material shared across all Card instances — never changes
+const _darkMaterial = new THREE.MeshPhongMaterial({
+  transparent: true,
+  opacity: 0,
+  side: THREE.DoubleSide,
+});
 
 export interface CardProps {
   id: string;
@@ -18,7 +23,8 @@ export interface CardProps {
   isInteractive?: boolean;
   onClick?: () => void;
   onHover?: (isHovering: boolean) => void;
-  
+  onCardClick?: () => void; // parent handles selection logic — avoids per-card store subscription
+
   // New props for trick functionality
   forcedValue?: ForcedValue;
   isHighlighted?: boolean;
@@ -27,7 +33,7 @@ export interface CardProps {
   viewType?: ViewType; // Determines if card backs should be transparent (audience view)
 }
 
-export function Card({
+export const Card = memo(function Card({
   id,
   position = [0, 0, 0],
   rotation = [0, 0, 0],
@@ -38,6 +44,7 @@ export function Card({
   isInteractive = false,
   onClick,
   onHover,
+  onCardClick,
   forcedValue,
   isHighlighted = false,
   flipState = 'face-up',
@@ -45,28 +52,19 @@ export function Card({
   viewType = 'participant',
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
-  const { setSelectedCard: setLegacySelectedCard, setHoveredCard } = useCardSelectionStore();
-  const { currentState, setSelectedCard, isSelectionLocked } = useTrickStore();
-  const socket = useSocket();
+  // Selector pattern: stable function refs, never triggers re-render on state change
+  const setHoveredCard = useCardSelectionStore((s) => s.setHoveredCard);
   
   // Determine actual card values (use forced value if provided)
   const displaySuit = forcedValue?.suit ?? suit;
   const displayValue = forcedValue?.value ?? value;
 
-  // Create reusable materials
-  // Card backs are transparent only for audience view to see head movement
   const backOpacity = viewType === 'audience' ? 0.7 : 1.0;
-  
+
   const materialsRef = useRef<{
-    dark: THREE.MeshPhongMaterial;
     front: THREE.MeshPhongMaterial;
     back: THREE.MeshPhongMaterial;
   }>({
-    dark: new THREE.MeshPhongMaterial({
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-    }),
     front: new THREE.MeshPhongMaterial({
       color: "#ffffff",
       transparent: true,
@@ -151,6 +149,11 @@ export function Card({
     materialsRef.current.back.needsUpdate = true;
   }, [viewType]);
   
+  const cardGeometry = useMemo(
+    () => new THREE.BoxGeometry(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height, CARD_DIMENSIONS.thickness),
+    []
+  );
+
   // Determine flip rotation based on flipState and viewType
   const flipRotation = useMemo(() => {
     // If parent is handling rotation, don't apply internal rotation
@@ -170,29 +173,18 @@ export function Card({
     return isFlipped ? Math.PI : 0;
   }, [flipState, isFlipped, disableInternalRotation]);
 
-  // Return reusable materials
-  const materials = useMemo(() => {
-    return [
-      materialsRef.current.dark, // left
-      materialsRef.current.dark, // right
-      materialsRef.current.dark, // top
-      materialsRef.current.dark, // bottom
-      materialsRef.current.front, // front
-      materialsRef.current.back, // back
-    ];
-  }, []);
+  const materials = useMemo(() => [
+    _darkMaterial, // left  — shared singleton
+    _darkMaterial, // right — shared singleton
+    _darkMaterial, // top   — shared singleton
+    _darkMaterial, // bottom — shared singleton
+    materialsRef.current.front,
+    materialsRef.current.back,
+  ], []);
 
   const handlePointerOver = () => {
     if (!isInteractive) return;
-    setHoveredCard({
-      id,
-      suit,
-      value,
-      position,
-      rotation,
-      isFlipped,
-      isSelected,
-    });
+    setHoveredCard({ id, suit, value, position, rotation, isFlipped, isSelected });
     onHover?.(true);
   };
 
@@ -204,47 +196,10 @@ export function Card({
 
   const handleClick = () => {
     if (!isInteractive) return;
-    
-    // Check if we're in the participant-selection state
-    if (currentState !== 'participant-selection') {
-      console.log('Card selection only allowed in participant-selection state');
-      return;
-    }
-    
-    // Check if selection is locked
-    if (isSelectionLocked) {
-      console.log('Selection is locked');
-      return;
-    }
-    
-    // Update selection in trick store
-    setSelectedCard(id);
-    
-    // Emit selection event to socket
-    if (socket) {
-      socket.emit('card-selected', {
-        cardId: id,
-        suit,
-        value,
-        timestamp: Date.now(),
-      });
-    }
-    
-    // Legacy selection store (for backwards compatibility)
-    setLegacySelectedCard({
-      id,
-      suit,
-      value,
-      position,
-      rotation,
-      isFlipped,
-      isSelected,
-    });
-    
+    onCardClick?.();
     onClick?.();
   };
 
-  // Store flip rotation in a ref that can be accessed by parent
   useEffect(() => {
     if (group.current) {
       group.current.userData.flipRotation = flipRotation;
@@ -263,15 +218,9 @@ export function Card({
     >
       <mesh
         rotation-y={flipRotation}
-        geometry={
-          new THREE.BoxGeometry(
-            CARD_DIMENSIONS.width,
-            CARD_DIMENSIONS.height,
-            CARD_DIMENSIONS.thickness
-          )
-        }
+        geometry={cardGeometry}
         material={materials}
       />
     </group>
   );
-}
+});

@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useTrickStore } from '@/store/useTrickStore';
 import { TrickState } from '@/types/trick';
 import { useGameStore } from '@/store/gameStore';
+import { useSocket } from '@/sockets/SocketProvider';
+import { LANDMARKS } from '@/config/landmarks';
 
 const ControlsContainer = styled.div`
   position: fixed;
@@ -107,6 +110,43 @@ const STATE_LABELS: Record<TrickState, string> = {
 export function TrickControls() {
   const { currentState, nextState, resetTrick, selectedCardId } = useTrickStore();
   const role = useGameStore((s) => s.role);
+  const socket = useSocket();
+  const [galleryActive, setGalleryActive] = useState(true);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+
+  // Re-enable gallery when the trick resets so the next run starts fresh
+  useEffect(() => {
+    if (currentState === 'setup') {
+      setGalleryActive(true);
+      setGalleryIndex(0);
+    }
+  }, [currentState]);
+
+  const galleryPrev = () => {
+    const next = Math.max(0, galleryIndex - 1);
+    setGalleryIndex(next);
+    socket?.emit('landmark-index', { index: next, senderId: socket.id });
+  };
+
+  const galleryNext = () => {
+    if (galleryIndex < LANDMARKS.length - 1) {
+      const next = galleryIndex + 1;
+      setGalleryIndex(next);
+      socket?.emit('landmark-index', { index: next, senderId: socket.id });
+    } else {
+      endGallery();
+    }
+  };
+
+  const endGallery = () => {
+    setGalleryActive(false);
+    socket?.emit('landmark-finish', { senderId: socket.id });
+  };
+
+  const skipGallery = () => {
+    setGalleryActive(false);
+    socket?.emit('gallery-skip');
+  };
 
   const canProgress = () => {
     // Can't progress from final-flip (end state)
@@ -128,6 +168,23 @@ export function TrickControls() {
 
   return (
     <ControlsContainer>
+      {/* Gallery controls — only shown while gallery is active */}
+      {galleryActive && (
+        <ControlPanel>
+          <StateDisplay>
+            Gallery
+            <StateName>{galleryIndex + 1} / {LANDMARKS.length}</StateName>
+          </StateDisplay>
+          <ButtonGroup>
+            <Button variant="secondary" onClick={galleryPrev} disabled={galleryIndex === 0}>← Prev</Button>
+            <Button onClick={galleryNext}>{galleryIndex < LANDMARKS.length - 1 ? 'Next →' : 'End Gallery'}</Button>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Button variant="secondary" onClick={skipGallery}>Skip Gallery</Button>
+          </ButtonGroup>
+        </ControlPanel>
+      )}
+
       <ControlPanel>
         <StateDisplay>
           Current State

@@ -1,69 +1,61 @@
 import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
 import { OrbitControls, Preload } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
-import { useEffect, useState } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useXR } from "@react-three/xr";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { debug } from "@/config/debug";
 import PanoramaViewer from "../PanoramaViewer";
 import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
+import LandmarkGallery from './LandmarkGallery';
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
 import { HeadsetIndicator } from "./HeadsetIndicator";
+import { XRDebug } from "./XRDebug";
+import { PointerIndicator } from "./PointerIndicator";
 import { useCameraSync } from "@/hooks/useCameraSync";
 import { useCameraUnlink } from "@/hooks/useCameraUnlink";
 import { useGameStore } from "@/store/gameStore";
 import { useSocket } from "@/sockets/SocketProvider";
 import { useTrickStore } from "@/store/useTrickStore";
-import { TrickState } from "@/types/trick";
 import { TRICK_CONFIG } from "@/config/trick";
+
+// Reusable — avoids allocations inside useFrame
+const _sphereCenter = new THREE.Vector3(0, 0, 0);
 
 export function Scene() {
   const { camera, gl } = useThree();
   const [isSpread, setIsSpread] = useState(false);
-  const [currentScene] = useState<"cards" | "landmarks" | "card-deck">("cards");
-  const [headsetIndicatorRotation, setHeadsetIndicatorRotation] = useState<[number, number, number]>([0, 0, 0]);
+  const skipGallery = new URLSearchParams(window.location.search).get('gallery') === '0';
+  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck">(skipGallery ? "cards" : "landmarks");
+  const lastBroadcastQuatRef = useRef({ x: 0, y: 0, z: 0, w: 1 });
+  const [pointerHitPos, setPointerHitPos] = useState<THREE.Vector3 | null>(null);
+  const lastPointerEmitRef = useRef(0);
+  // Driven imperatively via useFrame in HeadsetIndicator — no React state, no re-renders
+  const headsetIndicatorQuatRef = useRef(new THREE.Quaternion());
+  // Target quaternion for audience camera slerp — updated from participant-rotation events.
+  // Drives camera.quaternion directly to avoid Euler gimbal lock at extreme pitch angles.
+  const audienceCamTargetQuatRef = useRef(new THREE.Quaternion());
+  const hasAudienceCamTargetRef = useRef(false);
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
+  const isPresenting = useXR((state) => state.isPresenting);
 
   const role = useGameStore((s) => s.role);
   const socket = useSocket();
   const currentState = useTrickStore((s) => s.currentState);
   const isUnlinked = useTrickStore((s) => s.isUnlinked);
-  const setState = useTrickStore((s) => s.setState);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   
   // Determine view type based on role
   const viewType = role === 'spectator' ? 'participant' : 'audience';
   
-  // Sync trick state via socket
-  useEffect(() => {
-    if (!socket) return undefined;
-    
-    // Broadcast state changes (magician/spectator only)
-    if (role === 'magician' || role === 'spectator') {
-      socket.emit('trick-state-change', { state: currentState });
-      return undefined;
-    }
-    
-    // Listen for state changes (audience only)
-    if (role === 'audience') {
-      const handleStateChange = (data: { state: TrickState }) => {
-        setState(data.state);
-      };
-      
-      socket.on('trick-state-change', handleStateChange);
-      return () => {
-        socket.off('trick-state-change', handleStateChange);
-      };
-    }
-    
-    return undefined;
-  }, [socket, currentState, role, setState]);
+  // Trick state sync is handled by useTrickSync (mounted in App.tsx)
 
   // Initialize camera sync with unlink state
-  const { resetInterpolation, forceBroadcast } = useCameraSync({ 
+  const { resetInterpolation, forceBroadcast } = useCameraSync({
     enabled: true,
     isUnlinked,
     viewType,
@@ -93,15 +85,20 @@ export function Scene() {
   useEffect(() => {
     if (currentState === 'setup') {
       debug.trick('Resetting all trick state');
-      
+
       // Reset camera unlink state
       resetUnlinkState();
-      
+
       // Reset interpolation
       resetInterpolation();
-      
-      // Reset headset indicator rotation
-      setHeadsetIndicatorRotation([0, 0, 0]);
+
+      // Return to gallery (or cards if gallery was disabled via URL param)
+      setCurrentScene(skipGallery ? 'cards' : 'landmarks');
+
+      // Reset headset indicator + audience camera target rotations
+      headsetIndicatorQuatRef.current.identity();
+      audienceCamTargetQuatRef.current.identity();
+      hasAudienceCamTargetRef.current = false;
       
       // Reset camera to initial position
       const initialPosition = new THREE.Vector3(0, 2, 6);
@@ -123,76 +120,113 @@ export function Scene() {
         }, 100);
       }
     }
-  }, [currentState, viewType, resetUnlinkState, resetInterpolation, camera, forceBroadcast]);
+  }, [currentState, viewType, resetUnlinkState, resetInterpolation, camera, forceBroadcast, skipGallery]);
   
-  // Track participant camera rotation for headset indicator with throttling
+  useFrame((state, _delta, frame) => {
+    if (!socket || viewType !== 'participant') return;
+    const QUAT_THRESHOLD = 0.005;
+
+    let qx: number, qy: number, qz: number, qw: number;
+
+    if (frame) {
+      // XR mode — use the authoritative WebXR viewer pose (absolute orientation).
+      // isPresenting from useXR is unreliable (undefined in this @react-three/xr v6
+      // build); !!frame is the definitive indicator that an XR frame is active.
+      // We use absolute orientation (no relative calculation) because WebXR's reference
+      // space is gravity-aligned Y-up, matching the Three.js scene coordinate system.
+      // A relative calculation would bake in the entry angle as a downward offset.
+      const refSpace = state.gl.xr.getReferenceSpace();
+      if (!refSpace) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pose = (frame as any).getViewerPose(refSpace);
+      if (!pose) return;
+
+      qx = pose.transform.orientation.x;
+      qy = pose.transform.orientation.y;
+      qz = pose.transform.orientation.z;
+      qw = pose.transform.orientation.w;
+    } else {
+      qx = camera.quaternion.x;
+      qy = camera.quaternion.y;
+      qz = camera.quaternion.z;
+      qw = camera.quaternion.w;
+    }
+
+    const last = lastBroadcastQuatRef.current;
+    if (
+      Math.abs(qx - last.x) > QUAT_THRESHOLD ||
+      Math.abs(qy - last.y) > QUAT_THRESHOLD ||
+      Math.abs(qz - last.z) > QUAT_THRESHOLD ||
+      Math.abs(qw - last.w) > QUAT_THRESHOLD
+    ) {
+      socket.emit('participant-rotation', { x: qx, y: qy, z: qz, w: qw });
+      last.x = qx; last.y = qy; last.z = qz; last.w = qw;
+    }
+  });
+
+  // Audience: receive participant head rotation, drive indicator + audience camera target.
+  // We store the quaternion in a ref and slerp the camera toward it in useFrame below,
+  // rather than converting to Euler (which breaks at ±90° pitch due to gimbal lock).
+  useEffect(() => {
+    if (!socket || viewType !== 'audience') return undefined;
+
+    const handleRotationUpdate = (q: { x: number; y: number; z: number; w: number }) => {
+      headsetIndicatorQuatRef.current.set(q.x, q.y, q.z, q.w);
+      audienceCamTargetQuatRef.current.set(q.x, q.y, q.z, q.w);
+      hasAudienceCamTargetRef.current = true;
+    };
+
+    socket.on('participant-rotation', handleRotationUpdate);
+    return () => { socket.off('participant-rotation', handleRotationUpdate); };
+  }, [socket, viewType]);
+
+  // Audience: slerp camera quaternion + lerp position to match the spectator each frame.
+  // Quaternion slerp avoids Euler gimbal lock at extreme pitch angles.
+  // Position lerps to the sphere center [0,0,0] — the spectator's standing point in VR.
+  useFrame((_, delta) => {
+    if (viewType !== 'audience' || isUnlinked || !hasAudienceCamTargetRef.current) return;
+    const t = Math.min(0.15 * delta * 60, 1);
+    camera.quaternion.slerp(audienceCamTargetQuatRef.current, t);
+    camera.position.lerp(_sphereCenter, t);
+  });
+
+  // Magician can force-skip the gallery on all clients
   useEffect(() => {
     if (!socket) return undefined;
-    
-    if (viewType === 'participant') {
-      // Broadcast rotation updates with threshold to reduce network traffic
-      let lastRotation = { x: 0, y: 0, z: 0 };
-      const ROTATION_THRESHOLD = 0.01; // radians
-      
-      const updateRotation = () => {
-        const { x, y, z } = camera.rotation;
-        
-        // Only broadcast if rotation changed significantly
-        if (
-          Math.abs(x - lastRotation.x) > ROTATION_THRESHOLD ||
-          Math.abs(y - lastRotation.y) > ROTATION_THRESHOLD ||
-          Math.abs(z - lastRotation.z) > ROTATION_THRESHOLD
-        ) {
-          socket.emit('participant-rotation', { x, y, z });
-          lastRotation = { x, y, z };
-        }
-      };
-      
-      // Use requestAnimationFrame for smooth updates
-      let animationFrameId: number;
-      const animate = () => {
-        updateRotation();
-        animationFrameId = requestAnimationFrame(animate);
-      };
-      animate();
-      
-      return () => {
-        if (animationFrameId) {
-          cancelAnimationFrame(animationFrameId);
-        }
-      };
+    const handle = () => setCurrentScene('cards');
+    socket.on('gallery-skip', handle);
+    return () => { socket.off('gallery-skip', handle); };
+  }, [socket]);
+
+  // Clear pointer when leaving selection state
+  useEffect(() => {
+    if (currentState !== 'participant-selection') {
+      setPointerHitPos(null);
+      if (socket && viewType === 'participant') {
+        socket.emit('pointer-hit', null);
+      }
     }
-    
-    if (viewType === 'audience') {
-      // Listen for rotation updates
-      const handleRotationUpdate = (rotation: { x: number; y: number; z: number }) => {
-        // Calculate the headset indicator rotation relative to audience camera
-        if (isUnlinked) {
-          // Calculate the rotation needed for the headset to face the audience
-          const tempObject = new THREE.Object3D();
-          tempObject.position.set(0, camera.position.y, 0);
-          tempObject.lookAt(camera.position);
-          
-          const baseRotationY = tempObject.rotation.y;
-          
-          setHeadsetIndicatorRotation([
-            rotation.x,
-            baseRotationY + rotation.y,
-            rotation.z
-          ]);
-        } else {
-          setHeadsetIndicatorRotation([rotation.x, rotation.y, rotation.z]);
-        }
-      };
-      
-      socket.on('participant-rotation', handleRotationUpdate);
-      return () => {
-        socket.off('participant-rotation', handleRotationUpdate);
-      };
+  }, [currentState, socket, viewType]);
+
+  // Participant: broadcast pointer hit position to audience (throttled)
+  const handlePointerHit = useCallback((point: THREE.Vector3 | null) => {
+    setPointerHitPos(point);
+    const now = Date.now();
+    if (socket && now - lastPointerEmitRef.current > 40) {
+      socket.emit('pointer-hit', point ? { x: point.x, y: point.y, z: point.z } : null);
+      lastPointerEmitRef.current = now;
     }
-    
-    return undefined;
-  }, [socket, viewType, camera, isUnlinked]);
+  }, [socket]);
+
+  // Audience: receive pointer hit from participant
+  useEffect(() => {
+    if (!socket || viewType !== 'audience') return undefined;
+    const handle = (data: { x: number; y: number; z: number } | null) => {
+      setPointerHitPos(data ? new THREE.Vector3(data.x, data.y, data.z) : null);
+    };
+    socket.on('pointer-hit', handle);
+    return () => { socket.off('pointer-hit', handle); };
+  }, [socket, viewType]);
 
   // Initialize scene
   useEffect(() => {
@@ -204,47 +238,76 @@ export function Scene() {
     setIsSpread(!isSpread);
   };
 
+  // Keyboard / pointer handler to progress the landmarks gallery or move to cards
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'n') {
+        // Next: if in landmarks, move to cards when done
+        if (currentScene === 'landmarks') {
+          setCurrentScene('card-deck');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [currentScene]);
+
   return (
     <>
       <Preload all />
       {currentScene === "landmarks" ? null : (
         <Environment preset="sunset" intensity={1} blur={0.65} />
       )}
-      <OrbitControls
-        makeDefault
-        minPolarAngle={0}
-        maxPolarAngle={Math.PI}
-        minDistance={10}
-        maxDistance={50}
-        target={[0, 0, 0]}
-        enableDamping
-        dampingFactor={0.1}
-        enabled={!isDeviceMovementEnabled}
-      />
-      <DeviceOrientationControls enabled={isDeviceMovementEnabled} />
+      {!isPresenting && (
+        <OrbitControls
+          makeDefault
+          minPolarAngle={0}
+          maxPolarAngle={Math.PI}
+          minDistance={10}
+          maxDistance={50}
+          target={[0, 0, 0]}
+          enableDamping
+          dampingFactor={0.1}
+          enabled={!isDeviceMovementEnabled && !(viewType === 'audience' && !isUnlinked)}
+        />
+      )}
+      <DeviceOrientationControls enabled={isDeviceMovementEnabled && !isPresenting} />
 
       {currentScene === "card-deck" ? (
         <CardDeck isSpread={isSpread} onDeckClick={handleDeckClick} />
       ) : currentScene === "cards" ? (
-        <CardSphere 
-          radius={15} 
-          maxCardsPerRow={48} 
+        <CardSphere
+          radius={15}
+          maxCardsPerRow={48}
           rotationSpeed={0.02}
           viewType={viewType}
           trickState={currentState}
           selectedCardId={selectedCardId}
+          onPointerHit={viewType === 'participant' ? handlePointerHit : undefined}
         />
+      ) : currentScene === 'landmarks' ? (
+        <LandmarkGallery onFinish={() => setCurrentScene('cards')} />
       ) : (
         <PanoramaViewer />
       )}
       
+      {/* Pointer hit indicator - visible to both roles during card selection */}
+      {currentState === 'participant-selection' && pointerHitPos && (
+        <PointerIndicator position={pointerHitPos} />
+      )}
+
       {/* Headset indicator - only visible to audience after unlink */}
       {viewType === 'audience' && isUnlinked && (
         <HeadsetIndicator
           position={[0, 0, 0]}
-          rotation={headsetIndicatorRotation}
-          visible={true}
+          quaternionRef={headsetIndicatorQuatRef}
         />
+      )}
+
+      {/* XRDebug: always visible to audience so we can test without going through trick flow.
+          Shows axis gizmo + euler angles. Remove once head-tracking is verified. */}
+      {viewType === 'audience' && (
+        <XRDebug quaternionRef={headsetIndicatorQuatRef} />
       )}
 
       {/* Scene switcher button */}

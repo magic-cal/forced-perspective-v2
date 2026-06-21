@@ -25,7 +25,7 @@ export function useTrickSync() {
       // Broadcast state changes
       if (state.currentState !== prevState.currentState) {
         debug.trick(`[Magician] Broadcasting state change: ${state.currentState}`);
-        socket.emit('trick-state-changed', {
+        socket.emit('trick-state-change', {
           state: state.currentState,
           timestamp: Date.now(),
         });
@@ -100,13 +100,13 @@ export function useTrickSync() {
       useCardSelectionStore.getState().setHoveredCard(null);
     };
 
-    socket.on('trick-state-changed', handleStateChange);
+    socket.on('trick-state-change', handleStateChange);
     socket.on('unlink-triggered', handleUnlinkTriggered);
     socket.on('card-selected', handleCardSelected);
     socket.on('trick-reset', handleTrickReset);
 
     return () => {
-      socket.off('trick-state-changed', handleStateChange);
+      socket.off('trick-state-change', handleStateChange);
       socket.off('unlink-triggered', handleUnlinkTriggered);
       socket.off('card-selected', handleCardSelected);
       socket.off('trick-reset', handleTrickReset);

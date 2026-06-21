@@ -13,8 +13,8 @@ export default defineConfig({
   plugins: [react(), mkcert()],
 
   server: {
-    port: Number(process.env.PORT) || 5173,
-    https: false,
+    port: Number(process.env.PORT) || 10050,
+    https: true,
     host: true,
     proxy: (() => {
       const backendPort = process.env.VITE_BACKEND_PORT || process.env.BACKEND_PORT || "8080";

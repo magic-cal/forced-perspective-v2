@@ -62,11 +62,10 @@ export class ForcedPerspectiveServer {
         },
       },
       {
-        event: "trick-state-changed",
+        // Client emits 'trick-state-change' (no trailing 'd') — keep both spellings
+        event: "trick-state-change",
         callback: (data: TrickStateChangedEventData, broadcast) => {
-          console.log("[server](trick-state-changed) RECEIVED: %s", JSON.stringify(data));
-          const result = broadcast("trick-state-changed", data);
-          console.log("[server](trick-state-changed) BROADCASTED to other clients:", result);
+          broadcast("trick-state-change", data);
         },
       },
       {
@@ -102,6 +101,30 @@ export class ForcedPerspectiveServer {
         callback: (data: TrickResetEventData, broadcast) => {
           console.log("[server](trick-reset): %s", JSON.stringify(data));
           broadcast("trick-reset", data);
+        },
+      },
+      {
+        event: "landmark-index",
+        callback: (data: any, broadcast) => {
+          broadcast("landmark-index", data);
+        },
+      },
+      {
+        event: "landmark-finish",
+        callback: (data: any, broadcast) => {
+          broadcast("landmark-finish", data);
+        },
+      },
+      {
+        event: "gallery-skip",
+        callback: (_data: any, broadcast) => {
+          broadcast("gallery-skip", null);
+        },
+      },
+      {
+        event: "pointer-hit",
+        callback: (data: any, broadcast) => {
+          broadcast("pointer-hit", data);
         },
       },
     ];

@@ -1,33 +1,33 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface HeadsetIndicatorProps {
   position: [number, number, number];
-  rotation: [number, number, number];
-  visible: boolean;
+  quaternionRef: React.RefObject<THREE.Quaternion>;
 }
 
-export function HeadsetIndicator({ position, rotation, visible }: HeadsetIndicatorProps) {
+export function HeadsetIndicator({ position, quaternionRef }: HeadsetIndicatorProps) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene } = useGLTF('/src/objects/headsetModel/scene.gltf');
-  
-  // Scale to match the old geometric headset size (was scale 10 with 0.4 unit box)
-  const headsetScale = 0.01;
+  const clonedScene = useMemo(() => scene.clone(), [scene]);
 
-  if (!visible) return null;
+  useFrame(() => {
+    if (groupRef.current && quaternionRef.current) {
+      groupRef.current.quaternion.copy(quaternionRef.current);
+    }
+  });
 
   return (
-    <group ref={groupRef} position={position} rotation={rotation} scale={[headsetScale, headsetScale, headsetScale]}>
-      {/* Rotate the model 180 degrees on Y axis to match orientation */}
+    <group ref={groupRef} position={position} scale={0.01}>
+      {/* Model faces +Z by default; rotate 180° on Y so it faces inward toward audience */}
       <group rotation={[0, Math.PI, 0]}>
-        <primitive object={scene.clone()} />
+        <primitive object={clonedScene} />
       </group>
-      {/* Add a subtle point light to ensure visibility */}
       <pointLight position={[0, 50, 0]} intensity={0.3} distance={200} color="#ffffff" />
     </group>
   );
 }
 
-// Preload the model
 useGLTF.preload('/src/objects/headsetModel/scene.gltf');

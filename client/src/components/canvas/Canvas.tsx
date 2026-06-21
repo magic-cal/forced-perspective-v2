@@ -3,6 +3,8 @@ import { Suspense, useEffect, useRef } from "react";
 import { Scene } from "./Scene";
 import { Loader } from "@react-three/drei";
 import { useVisibility } from "@/hooks/useVisibility";
+import { XR } from "@react-three/xr";
+import { xrStore } from "@/store/xrStore";
 
 interface CanvasWrapperProps {
   className?: string;
@@ -25,7 +27,7 @@ export function Canvas({ className }: CanvasWrapperProps) {
       <R3FCanvas
         className={className}
         shadows
-        dpr={[1, 2]} // Responsive pixel ratio
+        dpr={[1, 1.5]}
         camera={{
           fov: 45,
           near: 0.1,
@@ -33,7 +35,7 @@ export function Canvas({ className }: CanvasWrapperProps) {
           position: [0, 2, 6],
         }}
         gl={{
-          antialias: true,
+          antialias: false,
           toneMapping: 3, // ACESFilmicToneMapping
           outputColorSpace: "srgb",
         }}
@@ -41,12 +43,30 @@ export function Canvas({ className }: CanvasWrapperProps) {
           glRef.current = gl;
           // Point camera at the horizon
           camera.lookAt(0, camera.position.y, 0);
+          // Log WebGL context lost/restored events to help diagnose GPU/context issues
+          try {
+            const canvasEl = (gl as any).domElement as HTMLCanvasElement | undefined;
+            if (canvasEl && canvasEl.addEventListener) {
+              canvasEl.addEventListener('webglcontextlost', (ev) => {
+                console.error('[Canvas] WebGL context lost', ev);
+                // prevent default to allow restoring later
+                try { ev.preventDefault(); } catch (e) {}
+              });
+              canvasEl.addEventListener('webglcontextrestored', () => {
+                console.info('[Canvas] WebGL context restored');
+              });
+            }
+          } catch (e) {
+            // ignore environment without DOM
+          }
         }}
       >
         <color attach="background" args={["#1a1a1a"]} />
-        <Suspense fallback={null}>
-          <Scene />
-        </Suspense>
+        <XR store={xrStore}>
+          <Suspense fallback={null}>
+            <Scene />
+          </Suspense>
+        </XR>
       </R3FCanvas>
       <Loader />
     </>
