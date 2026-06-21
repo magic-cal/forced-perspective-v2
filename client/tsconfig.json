@@ -25,7 +25,8 @@
       "@/hooks/*": ["./src/hooks/*"],
       "@/store/*": ["./src/store/*"],
       "@/types/*": ["./src/types/*"],
-      "@/utils/*": ["./src/utils/*"]
+      "@/utils/*": ["./src/utils/*"],
+      "slideshow-mel": ["../packages/slideshow-mel/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],

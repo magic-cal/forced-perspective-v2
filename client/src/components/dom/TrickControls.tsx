@@ -90,21 +90,23 @@ const StateInfo = styled.div`
 `;
 
 const STATE_DESCRIPTIONS: Record<TrickState, string> = {
-  'setup': 'Cards face participant. Views synced.',
-  'cards-flipping': 'Cards flipping to backs. Audience rotating 180°. Animation in progress.',
+  'setup': 'Cards flying as flock. Press Next to form sphere.',
+  'forming': 'Cards assembling into sphere. Press Next when sphere is formed.',
+  'cards-flipping': 'Cards flipping to backs. Audience rotating. Animation in progress.',
   'participant-selection': 'Participant selecting card. Audience sees backs.',
-  'lock-and-reveal': 'Selected card reveals forced value.',
-  'sphere-aligned': 'Sphere aligned. Ready for final flip.',
+  'sphere-aligned': 'Sphere aligning. Audience camera moving into position.',
   'final-flip': 'Cards flipping to reveal. Animation in progress.',
+  'scatter': 'Cards scatter away. Selected card remains.',
 };
 
 const STATE_LABELS: Record<TrickState, string> = {
-  'setup': 'Setup',
+  'setup': 'Flock',
+  'forming': 'Forming Sphere',
   'cards-flipping': 'Cards Flipping & Unlink',
   'participant-selection': 'Participant Selection',
-  'lock-and-reveal': 'Lock & Reveal',
   'sphere-aligned': 'Sphere Aligned',
   'final-flip': 'Final Flip',
+  'scatter': 'Scatter',
 };
 
 export function TrickControls() {
@@ -149,15 +151,8 @@ export function TrickControls() {
   };
 
   const canProgress = () => {
-    // Can't progress from final-flip (end state)
-    if (currentState === 'final-flip') return false;
-    
-    // Need a selected card to progress from participant-selection
+    if (currentState === 'scatter') return false;
     if (currentState === 'participant-selection' && !selectedCardId) return false;
-    
-    // Sphere-aligned progresses automatically after alignment completes
-    // But allow manual progress as well
-    
     return true;
   };
 
@@ -211,7 +206,7 @@ export function TrickControls() {
             disabled={!canProgress()}
             title={!canProgress() ? 'Cannot progress from current state' : 'Progress to next state'}
           >
-            {currentState === 'final-flip' ? 'Complete' : 'Next State'}
+            {currentState === 'scatter' ? 'Complete' : 'Next State'}
           </Button>
           <Button 
             variant="secondary" 

@@ -20,11 +20,12 @@ interface TrickStore {
 
 const STATE_SEQUENCE: TrickState[] = [
   'setup',
+  'forming',
   'cards-flipping',
   'participant-selection',
-  'lock-and-reveal',
   'sphere-aligned',
   'final-flip',
+  'scatter',
 ];
 
 export const useTrickStore = create<TrickStore>((set, get) => ({

@@ -1,0 +1,3 @@
+[submodule "packages/slideshow-mel"]
+	path = packages/slideshow-mel
+	url = https://github.com/magic-cal/slideshow-mel.git

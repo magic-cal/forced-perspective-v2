@@ -6,12 +6,16 @@ import { VRButton } from "@/components/dom/VRButton";
 import { SHOW_DEBUG_UI } from "@/config/debug";
 import { useGameStore } from "@/store/gameStore";
 import { useTrickSync } from "@/hooks/useTrickSync";
+import { useSlideshowMelIntegration } from "@/hooks/useSlideshowMelIntegration";
 
 export default function App() {
   const role = useGameStore((s) => s.role);
-  
+
   // Synchronize trick state across all clients
   useTrickSync();
+
+  // Register with Slideshow Bob when running as an iframe child
+  useSlideshowMelIntegration();
   
   return (
     <main className="app-container">

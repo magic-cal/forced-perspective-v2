@@ -24,6 +24,8 @@ export const TRICK_CONFIG = {
     duration: 2000,
     // Easing for rotation slowdown
     rotationSlowdownDuration: 500,
+    // Duration of the audience camera move into the aligned line-of-sight (ms)
+    audienceCamDuration: 2500,
   },
 
   CARD_FLIP: {
