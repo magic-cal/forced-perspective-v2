@@ -27,7 +27,7 @@ export function Canvas({ className }: CanvasWrapperProps) {
       <R3FCanvas
         className={className}
         shadows
-        dpr={[1, 1.5]}
+        dpr={[1, 2]}
         camera={{
           fov: 45,
           near: 0.1,
@@ -35,7 +35,7 @@ export function Canvas({ className }: CanvasWrapperProps) {
           position: [0, 2, 6],
         }}
         gl={{
-          antialias: false,
+          antialias: true,
           toneMapping: 3, // ACESFilmicToneMapping
           outputColorSpace: "srgb",
         }}

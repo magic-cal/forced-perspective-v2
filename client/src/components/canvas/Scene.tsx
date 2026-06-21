@@ -4,7 +4,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useXR } from "@react-three/xr";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { debug } from "@/config/debug";
+import { debug, SHOW_DEBUG_UI } from "@/config/debug";
 import PanoramaViewer from "../PanoramaViewer";
 import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
@@ -304,9 +304,8 @@ export function Scene() {
         />
       )}
 
-      {/* XRDebug: always visible to audience so we can test without going through trick flow.
-          Shows axis gizmo + euler angles. Remove once head-tracking is verified. */}
-      {viewType === 'audience' && (
+      {/* XRDebug: gate behind ?debug=1 so it stays available but hidden by default */}
+      {SHOW_DEBUG_UI && viewType === 'audience' && (
         <XRDebug quaternionRef={headsetIndicatorQuatRef} />
       )}
 
