@@ -86,8 +86,26 @@ export class ForcedPerspectiveServer {
         event: "trick-state-change",
         callback: (data: TrickStateChangedEventData, broadcast) => {
           session.currentTrickState = data.state;
+          if (data.state === "forming") {
+            // Reset epoch clock so all clients start row rotation from 0 simultaneously
+            session.sessionStartTime = Date.now();
+            session.rotationStopTime = null;
+            broadcast("session-state", {
+              sessionStartTime: session.sessionStartTime,
+              rotationStopTime: session.rotationStopTime,
+              sphereRotation: session.sphereRotation,
+              currentTrickState: session.currentTrickState,
+            } as SessionStateEventData);
+          }
           if (data.state === "participant-selection") {
+            // Freeze epoch so all clients lock sphere rotation at the same angle
             session.rotationStopTime = Date.now();
+            broadcast("session-state", {
+              sessionStartTime: session.sessionStartTime,
+              rotationStopTime: session.rotationStopTime,
+              sphereRotation: session.sphereRotation,
+              currentTrickState: session.currentTrickState,
+            } as SessionStateEventData);
           }
           broadcast("trick-state-change", data);
         },

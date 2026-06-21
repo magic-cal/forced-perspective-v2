@@ -1,8 +1,8 @@
 export type TrickState =
   | 'setup'
+  | 'forming'
   | 'cards-flipping'
   | 'participant-selection'
-  | 'lock-and-reveal'
   | 'sphere-aligned'
   | 'final-flip'
   | 'scatter';

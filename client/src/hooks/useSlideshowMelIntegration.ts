@@ -5,11 +5,11 @@ import { useSocket } from '@/sockets/SocketProvider';
 import { TrickState } from '@/types/trick';
 
 const TRICK_STEPS: RunnerStep[] = [
-  { id: 'setup',                 title: 'Setup',                description: 'Cards face participant. Views synced.' },
+  { id: 'setup',                 title: 'Flock',                description: 'Cards flying as boid flock.' },
+  { id: 'forming',               title: 'Forming Sphere',       description: 'Cards assembling into sphere. Press Next when ready.' },
   { id: 'cards-flipping',        title: 'Cards Flipping',       description: 'Cards flipping to backs. Audience rotating.' },
   { id: 'participant-selection', title: 'Participant Selection', description: 'Participant selecting a card.' },
-  { id: 'lock-and-reveal',       title: 'Lock & Reveal',        description: 'Selected card reveals forced value.' },
-  { id: 'sphere-aligned',        title: 'Sphere Aligned',       description: 'Sphere aligned. Ready for final flip.' },
+  { id: 'sphere-aligned',        title: 'Sphere Aligned',       description: 'Sphere aligning. Audience camera moves.' },
   { id: 'final-flip',            title: 'Final Flip',           description: 'Cards flipping to reveal.' },
   { id: 'scatter',               title: 'Scatter',              description: 'Cards scatter away. Selected card remains.' },
 ];

@@ -44,6 +44,13 @@ const _posOffset = new THREE.Vector3();
 const _animResult = { positionOffset: _posOffset, rotationProgress: 0, isComplete: false };
 const _scatterTarget = new THREE.Vector3();
 
+// Boid orientation scratch objects (reused every frame to avoid allocations)
+const _boidFwd   = new THREE.Vector3();
+const _boidRight = new THREE.Vector3();
+const _boidFace  = new THREE.Vector3();
+const _boidUp    = new THREE.Vector3();
+const _boidMat4  = new THREE.Matrix4();
+
 const SCATTER_DISTANCE = 350;
 const SCATTER_DURATION = 3000;
 const SCATTER_STAGGER_MS = 8;
@@ -53,6 +60,30 @@ interface ScatterEntry {
   localStartPos: THREE.Vector3;
   localDirection: THREE.Vector3;
 }
+
+// Boid simulation constants — separation + alignment only (no cohesion = no balling up)
+const BOID_SPEED        = 0.14;       // cruise speed (units/frame at 60 fps)
+const BOID_SPEED_VAR    = 0.03;       // tight speed band so the flock feels cohesive
+const BOID_SEP_DIST_SQ  = 30;         // separation radius² ≈ 5.5 units (>1 card body)
+const BOID_ALIGN_DIST_SQ = 400;       // alignment radius² = 20 units — large neighbourhood creates wave / leader patterns
+const BOID_BOUNDS_MIN   = 42;         // inner shell — keep away from scene centre and cameras
+const BOID_BOUNDS_MAX   = 60;         // outer shell — stay within visible frustum
+const BOID_SEP_W        = 0.12;       // strong separation so cards respect each other's space
+const BOID_ALIGN_W      = 0.05;       // alignment weight — drives leader/follower dynamics
+const BOID_BOUNDS_W     = 0.05;       // shell boundary steering weight
+const BOID_NOISE        = 0.003;      // tiny random nudge keeps flow organic and prevents lock-in
+const ORIENT_LERP       = 0.08;       // fraction to slerp orientation per frame — no snapping
+const FORMING_DURATION  = 5000;       // ms for sphere formation animation
+
+// Pre-allocated arrays for boid position snapshot (avoids per-frame allocations)
+const MAX_BOID_CARDS = 1024;
+const _boidPosArr = new Float32Array(MAX_BOID_CARDS * 3);
+const _boidIdxArr = new Int32Array(MAX_BOID_CARDS);
+const _boidGroupArr: (THREE.Object3D | null)[] = new Array(MAX_BOID_CARDS).fill(null);
+const _boidVelArr = new Float32Array(MAX_BOID_CARDS * 3); // velocity snapshot for alignment rule
+const _airplaneQ  = new THREE.Quaternion();                // scratch for orientation blending
+
+interface BoidData { velocity: THREE.Vector3 }
 
 export function CardSphere({
   radius = 15,
@@ -76,7 +107,7 @@ export function CardSphere({
   const animatingCardIndicesRef = useRef<Map<number, { startTime: number; progress: number }>>(new Map());
   const totalCardCountRef = useRef(0);
   const [forcedCardValue, setForcedCardValue] = useState<ForcedValue | null>(null);
-  const { nextState, lockSelection, setSelectedCard } = useTrickStore();
+  const { lockSelection, setSelectedCard } = useTrickStore();
   const setLegacySelectedCard = useCardSelectionStore((s) => s.setSelectedCard);
   const socket = useSocket();
   const sphereRotationFromSession = useSessionStore((s) => s.sphereRotation);
@@ -88,6 +119,12 @@ export function CardSphere({
   const rowRotationSpeedsRef = useRef<Map<number, number>>(new Map());
   const frozenCardRotationsRef = useRef<Map<number, THREE.Quaternion>>(new Map());
   const scatterDataRef = useRef<Map<number, ScatterEntry>>(new Map());
+  const boidDataRef = useRef<Map<number, BoidData>>(new Map());
+  const formingStartTimeRef = useRef<number | null>(null);
+  const formingStartPositionsRef = useRef<Map<number, THREE.Vector3>>(new Map());
+  const formingAdvancedRef = useRef(false);
+  const formingTargetQuaternionsRef = useRef<Map<number, THREE.Quaternion>>(new Map());
+  const formingStaggerRef = useRef<Map<number, number>>(new Map());
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -166,6 +203,12 @@ export function CardSphere({
       flippedCardIndicesRef.current = new Set();
       animatingCardIndicesRef.current = new Map();
       scatterDataRef.current = new Map();
+      boidDataRef.current = new Map();
+      formingStartTimeRef.current = null;
+      formingStartPositionsRef.current = new Map();
+      formingAdvancedRef.current = false;
+      formingTargetQuaternionsRef.current = new Map();
+      formingStaggerRef.current = new Map();
       setForcedCardValue(null);
       animationStartTimeRef.current = null;
       sphereAlignmentStartRef.current = null;
@@ -173,16 +216,101 @@ export function CardSphere({
       rowRotationSpeedsRef.current = new Map();
       frozenCardRotationsRef.current = new Map();
       hasSphereRotationEmittedRef.current = false;
-      
-      // Reset sphere rotation to initial state
+
+      // Reset sphere rotation
       if (sphereRef.current) {
         sphereRef.current.rotation.y = 0;
-        
-        sphereRef.current.children.forEach((row) => {
-          row.rotation.y = 0;
-        });
+        sphereRef.current.children.forEach((row) => { row.rotation.y = 0; });
       }
     }
+  }, [trickState]);
+
+  // Initialise boid simulation when entering setup
+  useEffect(() => {
+    if (trickState !== 'setup' || !sphereRef.current) return;
+
+    const boidData = new Map<number, BoidData>();
+
+    sphereRef.current.children.forEach((row) => {
+      row.children.forEach((cardGroup) => {
+        const idx = cardGroup.userData.cardIndex as number;
+
+        // Spawn within the annular shell so cards start in the visible zone
+        const phi = Math.acos(1 - 2 * Math.random());
+        const theta = Math.random() * Math.PI * 2;
+        const r = BOID_BOUNDS_MIN + 2 + Math.random() * (BOID_BOUNDS_MAX - BOID_BOUNDS_MIN - 4);
+        cardGroup.position.set(
+          r * Math.sin(phi) * Math.cos(theta),
+          r * Math.cos(phi),
+          r * Math.sin(phi) * Math.sin(theta),
+        );
+
+        // Random initial velocity near cruise speed
+        const speed = BOID_SPEED + (Math.random() - 0.5) * BOID_SPEED_VAR * 2;
+        const vPhi = Math.acos(1 - 2 * Math.random());
+        const vTheta = Math.random() * Math.PI * 2;
+        boidData.set(idx, {
+          velocity: new THREE.Vector3(
+            speed * Math.sin(vPhi) * Math.cos(vTheta),
+            speed * Math.cos(vPhi),
+            speed * Math.sin(vPhi) * Math.sin(vTheta),
+          ),
+        });
+      });
+    });
+
+    boidDataRef.current = boidData;
+  }, [trickState]);
+
+  // When leaving setup/forming, rows are at rotation.y=0 (frozen by shouldStopRotation).
+  // Reset the epoch reference so the epoch-based rotation starts from 0 rather than
+  // jumping to the accumulated offset since session start.
+  useEffect(() => {
+    if (trickState === 'forming') {
+      useSessionStore.setState({ sessionStartTime: Date.now() });
+    }
+  }, [trickState]);
+
+  // Capture boid positions as forming start positions when entering forming
+  useEffect(() => {
+    if (trickState !== 'forming' || !sphereRef.current) return;
+
+    formingAdvancedRef.current = false;
+    formingStartTimeRef.current = Date.now();
+
+    const startPositions = new Map<number, THREE.Vector3>();
+    sphereRef.current.children.forEach((row) => {
+      row.children.forEach((cardGroup) => {
+        startPositions.set(
+          cardGroup.userData.cardIndex as number,
+          cardGroup.position.clone(),
+        );
+      });
+    });
+    formingStartPositionsRef.current = startPositions;
+
+    // Capture target quaternion per card at its SPHERE SLOT position (not boid position).
+    // Temporarily move each card to basePosition before calling lookAt so the stored
+    // orientation is correct for when the card physically arrives at the sphere.
+    sphereRef.current.updateWorldMatrix(true, true);
+    const targetQuaternions = new Map<number, THREE.Quaternion>();
+    const stagger = new Map<number, number>();
+    sphereRef.current.children.forEach((row) => {
+      row.children.forEach((cardGroup) => {
+        const idx = cardGroup.userData.cardIndex as number;
+        stagger.set(idx, Math.random() * FORMING_DURATION * 0.4);
+        const basePos = cardGroup.userData.basePosition as THREE.Vector3;
+        const savedPos = cardGroup.position.clone();
+        const savedQ   = cardGroup.quaternion.clone();
+        if (basePos) cardGroup.position.copy(basePos);
+        (cardGroup as THREE.Object3D).lookAt(_CENTER);
+        targetQuaternions.set(idx, cardGroup.quaternion.clone());
+        cardGroup.position.copy(savedPos);
+        cardGroup.quaternion.copy(savedQ);
+      });
+    });
+    formingTargetQuaternionsRef.current = targetQuaternions;
+    formingStaggerRef.current = stagger;
   }, [trickState]);
   
   // Helper function to start sphere alignment animation
@@ -247,15 +375,14 @@ export function CardSphere({
     }
   }, [selectedCardId, trickState, startSphereAlignment]);
   
-  // Handle lock and reveal state
+  // When entering sphere-aligned: lock selection, reveal forced card value, restart sphere
+  // alignment timer so the animation plays fresh regardless of how long the operator waited
   useEffect(() => {
-    if (trickState === 'lock-and-reveal' && selectedCardId) {
+    if (trickState === 'sphere-aligned' && selectedCardId) {
       if (viewType === 'participant') {
         lockSelection();
       }
       setForcedCardValue(FORCED_CARD);
-      // Reset alignment start time so animation plays fresh when lock-and-reveal is entered
-      // (target angle was already computed when the card was selected)
       sphereAlignmentStartRef.current = Date.now();
     }
   }, [trickState, selectedCardId, lockSelection, viewType]);
@@ -340,6 +467,9 @@ export function CardSphere({
     const rows = 20;
     const result = [];
     let cardIndex = 0;
+    // During boid/forming phases, omit the position prop so React reconciliation
+    // does not overwrite the imperatively-driven positions set by useFrame/useEffect.
+    const isBoidPhase = trickState === 'setup' || trickState === 'forming';
 
     for (let row = 0; row < rows; row++) {
       const rowCards = [];
@@ -368,7 +498,7 @@ export function CardSphere({
         rowCards.push(
           <group
             key={`${row}-${i}`}
-            position={[x, y + verticalOffset, z]}
+            {...(!isBoidPhase && { position: [x, y + verticalOffset, z] as [number, number, number] })}
             userData={{
               cardIndex: currentCardIndex,
               basePosition: new THREE.Vector3(x, y + verticalOffset, z),
@@ -469,17 +599,17 @@ export function CardSphere({
   };
 
   // Animate the rows and update card rotations
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     try {
       if (sphereRef.current) {
         const currentTime = Date.now();
         let completedCount = 0;
         
-        const isAligning = trickState === 'lock-and-reveal' && sphereAlignmentStartRef.current !== null && targetSphereRotationRef.current !== null;
-      
-      // Stop rotation during participant-selection and all subsequent states
-      const shouldStopRotation = trickState === 'participant-selection'
-        || trickState === 'lock-and-reveal'
+        const isAligning = trickState === 'sphere-aligned' && sphereAlignmentStartRef.current !== null && targetSphereRotationRef.current !== null;
+
+      // Stop row rotation during boids/forming and all post-selection states
+      const shouldStopRotation = trickState === 'setup'
+        || trickState === 'participant-selection'
         || trickState === 'sphere-aligned'
         || trickState === 'final-flip'
         || trickState === 'scatter';
@@ -507,17 +637,12 @@ export function CardSphere({
         // Interpolate sphere rotation
         sphereRef.current.rotation.y = (targetSphereRotationRef.current ?? 0) * easedAlignProgress;
 
-        // Complete animation
+        // Complete animation — sphere is now aligned; broadcast final angle for late-joiners
         if (alignProgress >= 1.0) {
           sphereAlignmentStartRef.current = null;
-          // Only transition state once (from spectator view)
-          if (viewType === 'participant') {
-            nextState();
-            // Broadcast final sphere angle so late-joining audience views can snap to it
-            if (!hasSphereRotationEmittedRef.current) {
-              hasSphereRotationEmittedRef.current = true;
-              socket?.emit('sphere-rotation-settled', { rotation: sphereRef.current.rotation.y });
-            }
+          if (viewType === 'participant' && !hasSphereRotationEmittedRef.current) {
+            hasSphereRotationEmittedRef.current = true;
+            socket?.emit('sphere-rotation-settled', { rotation: sphereRef.current.rotation.y });
           }
         }
       } else if (!isAligning) {
@@ -536,6 +661,202 @@ export function CardSphere({
         }
       }
       
+      // BOID + FORMING: murmuration simulation (separation + alignment + cohesion)
+      // with an optional homing force that ramps up during 'forming' to pull each
+      // card to its sphere slot while it continues flying like a bird.
+      if (trickState === 'setup' || trickState === 'forming') {
+        // --- snapshot positions + velocities ---
+        let boidCount = 0;
+        sphereRef.current.children.forEach((row) => {
+          row.children.forEach((cardGroup) => {
+            const boid = boidDataRef.current.get(cardGroup.userData.cardIndex as number);
+            if (!boid) return;
+            const b3 = boidCount * 3;
+            _boidPosArr[b3]     = cardGroup.position.x;
+            _boidPosArr[b3 + 1] = cardGroup.position.y;
+            _boidPosArr[b3 + 2] = cardGroup.position.z;
+            _boidVelArr[b3]     = boid.velocity.x;
+            _boidVelArr[b3 + 1] = boid.velocity.y;
+            _boidVelArr[b3 + 2] = boid.velocity.z;
+            _boidIdxArr[boidCount]   = cardGroup.userData.cardIndex as number;
+            _boidGroupArr[boidCount] = cardGroup as THREE.Object3D;
+            boidCount++;
+          });
+        });
+
+        const isForming      = trickState === 'forming' && formingStartTimeRef.current !== null;
+        const formingElapsed = isForming ? (currentTime - formingStartTimeRef.current!) : 0;
+
+        // --- per-boid forces ---
+        for (let i = 0; i < boidCount; i++) {
+          const boid = boidDataRef.current.get(_boidIdxArr[i]);
+          if (!boid) continue;
+
+          const obj = _boidGroupArr[i]!;
+          const i3  = i * 3;
+          const px  = _boidPosArr[i3], py = _boidPosArr[i3 + 1], pz = _boidPosArr[i3 + 2];
+
+          // Per-card staggered forming progress — each card has its own random delay offset
+          const cardDelay    = isForming ? (formingStaggerRef.current.get(_boidIdxArr[i]) ?? 0) : 0;
+          const cardElapsed  = isForming ? Math.max(0, formingElapsed - cardDelay) : 0;
+          const cardProgress = isForming ? Math.min(cardElapsed / (FORMING_DURATION * 0.55), 1.0) : 0;
+          const cardEased    = easeInOutCubic(cardProgress);
+          // Boid forces scale to zero as card homes in so homing force dominates
+          const boidScale    = isForming ? Math.max(0.0, 1 - cardEased * 0.9) : 1.0;
+
+          // Pre-compute distance to sphere slot (used for snap check and speed tuning)
+          const homeBase   = isForming && cardEased > 0.05 ? (obj.userData.basePosition as THREE.Vector3) : null;
+          const distToHome = homeBase ? obj.position.distanceTo(homeBase) : Infinity;
+
+          // Distance-based snap — card arrives when it gets within 0.8 units of its slot
+          if (homeBase && distToHome < 0.8) {
+            boid.velocity.set(0, 0, 0);
+            obj.position.copy(homeBase);
+            const tQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
+            if (tQ) obj.quaternion.copy(tQ);
+            continue;
+          }
+
+          let sepX = 0, sepY = 0, sepZ = 0;
+          let alignVx = 0, alignVy = 0, alignVz = 0, alignN = 0;
+
+          for (let j = 0; j < boidCount; j++) {
+            if (j === i) continue;
+            const j3  = j * 3;
+            const dx  = px - _boidPosArr[j3];
+            const dy  = py - _boidPosArr[j3 + 1];
+            const dz  = pz - _boidPosArr[j3 + 2];
+            const dsq = dx * dx + dy * dy + dz * dz;
+
+            if (dsq < BOID_ALIGN_DIST_SQ && dsq > 0) {
+              alignVx += _boidVelArr[j3]; alignVy += _boidVelArr[j3 + 1]; alignVz += _boidVelArr[j3 + 2]; alignN++;
+              if (dsq < BOID_SEP_DIST_SQ) {
+                const d = Math.sqrt(dsq);
+                sepX += dx / d; sepY += dy / d; sepZ += dz / d;
+              }
+            }
+          }
+
+          // Separation — scaled down as card approaches sphere slot
+          boid.velocity.x += sepX * BOID_SEP_W * boidScale;
+          boid.velocity.y += sepY * BOID_SEP_W * boidScale;
+          boid.velocity.z += sepZ * BOID_SEP_W * boidScale;
+
+          // Alignment — scaled down so homing force dominates near completion
+          if (alignN > 0) {
+            boid.velocity.x += (alignVx / alignN - boid.velocity.x) * BOID_ALIGN_W * boidScale;
+            boid.velocity.y += (alignVy / alignN - boid.velocity.y) * BOID_ALIGN_W * boidScale;
+            boid.velocity.z += (alignVz / alignN - boid.velocity.z) * BOID_ALIGN_W * boidScale;
+          }
+
+          // Shell boundary — outer always; inner shrinks during forming so cards can reach sphere slots
+          const dist = Math.sqrt(px * px + py * py + pz * pz);
+          if (dist > 0.001) {
+            const invD = 1 / dist;
+            if (dist > BOID_BOUNDS_MAX) {
+              boid.velocity.x -= px * invD * BOID_BOUNDS_W * boidScale;
+              boid.velocity.y -= py * invD * BOID_BOUNDS_W * boidScale;
+              boid.velocity.z -= pz * invD * BOID_BOUNDS_W * boidScale;
+            }
+            // During forming, only guard against going inside the sphere itself (not the outer shell)
+            const innerBound = isForming ? 18 : BOID_BOUNDS_MIN;
+            if (dist < innerBound) {
+              boid.velocity.x += px * invD * BOID_BOUNDS_W;
+              boid.velocity.y += py * invD * BOID_BOUNDS_W;
+              boid.velocity.z += pz * invD * BOID_BOUNDS_W;
+            }
+          }
+
+          // Small random nudge — keeps the flock organically varied
+          boid.velocity.x += (Math.random() - 0.5) * BOID_NOISE;
+          boid.velocity.y += (Math.random() - 0.5) * BOID_NOISE;
+          boid.velocity.z += (Math.random() - 0.5) * BOID_NOISE;
+
+          // Homing force — per-card ramp, uses pre-computed homeBase
+          if (homeBase) {
+            const homeStrength = cardEased * 0.18;
+            boid.velocity.x += (homeBase.x - obj.position.x) * homeStrength;
+            boid.velocity.y += (homeBase.y - obj.position.y) * homeStrength;
+            boid.velocity.z += (homeBase.z - obj.position.z) * homeStrength;
+          }
+
+          // Speed: full boid speed during transit, ease off in the final 8 units for smooth landing
+          const proximityFactor = isForming ? Math.min(distToHome / 8, 1) : 1;
+          const maxSpd = (BOID_SPEED + BOID_SPEED_VAR) * (isForming ? (0.3 + proximityFactor * 0.7) : 1);
+          const minSpd = Math.max(0.005, (BOID_SPEED - BOID_SPEED_VAR) * (isForming ? proximityFactor * 0.3 : 1));
+          const spd    = boid.velocity.length();
+          if (spd > maxSpd)                     boid.velocity.multiplyScalar(maxSpd / spd);
+          else if (spd > 0.001 && spd < minSpd) boid.velocity.multiplyScalar(minSpd / spd);
+
+          obj.position.x += boid.velocity.x;
+          obj.position.y += boid.velocity.y;
+          obj.position.z += boid.velocity.z;
+
+          // --- Orientation ---
+          // Face (+Z local) = outward from scene centre — always visible to observers outside.
+          // Up (+Y local) = velocity component perpendicular to face — short end of card leads.
+          // Smoothed via slerp each frame to prevent snapping on direction changes.
+          const vLen = boid.velocity.length();
+          if (vLen > 0.001) {
+            _boidFwd.set(boid.velocity.x / vLen, boid.velocity.y / vLen, boid.velocity.z / vLen);
+
+            // Face = toward camera so the card front is always visible to the viewer.
+            // Uses card's local-space position as approximation of world position.
+            const { x: camX, y: camY, z: camZ } = state.camera.position;
+            const cfx = camX - px, cfy = camY - py, cfz = camZ - pz;
+            const cfLen = Math.sqrt(cfx * cfx + cfy * cfy + cfz * cfz);
+            if (cfLen > 0.001) {
+              _boidFace.set(cfx / cfLen, cfy / cfLen, cfz / cfLen);
+              // Up = velocity with face component removed (card top follows travel direction)
+              const velFaceDot = _boidFwd.x * _boidFace.x + _boidFwd.y * _boidFace.y + _boidFwd.z * _boidFace.z;
+              _boidUp.set(
+                _boidFwd.x - _boidFace.x * velFaceDot,
+                _boidFwd.y - _boidFace.y * velFaceDot,
+                _boidFwd.z - _boidFace.z * velFaceDot,
+              );
+              const upLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
+              if (upLen > 0.1) {
+                _boidUp.x /= upLen; _boidUp.y /= upLen; _boidUp.z /= upLen;
+              } else {
+                // Velocity mostly toward camera — fall back to world-up rejection from face
+                const wY = Math.abs(_boidFace.y) < 0.98 ? 1 : 0;
+                const wZ = Math.abs(_boidFace.y) < 0.98 ? 0 : 1;
+                const wDot = wY * _boidFace.y + wZ * _boidFace.z;
+                _boidUp.set(-_boidFace.x * wDot, wY - _boidFace.y * wDot, wZ - _boidFace.z * wDot);
+                const wLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
+                if (wLen > 0.001) { _boidUp.x /= wLen; _boidUp.y /= wLen; _boidUp.z /= wLen; }
+              }
+            } else {
+              // Camera at same position as card — use velocity as face direction
+              _boidFace.copy(_boidFwd);
+              if (Math.abs(_boidFwd.y) < 0.98) { _boidUp.set(0, 1, 0); } else { _boidUp.set(0, 0, 1); }
+            }
+
+            // right = up × face — right-handed basis (X=right, Y=up/~velocity, Z=face/outward)
+            _boidRight.crossVectors(_boidUp, _boidFace);
+            _boidMat4.makeBasis(_boidRight, _boidUp, _boidFace);
+
+            // During forming: blend per-card toward sphere-slot orientation
+            if (isForming && cardEased > 0.03) {
+              const targetQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
+              if (targetQ) {
+                _airplaneQ.setFromRotationMatrix(_boidMat4);
+                _airplaneQ.slerpQuaternions(_airplaneQ, targetQ, cardEased);
+              } else {
+                _airplaneQ.setFromRotationMatrix(_boidMat4);
+              }
+            } else {
+              _airplaneQ.setFromRotationMatrix(_boidMat4);
+            }
+            const orientF = isForming ? Math.max(ORIENT_LERP, cardEased * 0.4) : ORIENT_LERP;
+            obj.quaternion.slerp(_airplaneQ, orientF);
+          }
+        }
+      }
+
+      // Skip orientation processing entirely during boid/forming states
+      if (trickState === 'setup' || trickState === 'forming') return;
+
       // Update card orientations and animations
       sphereRef.current.children.forEach((row) => {
         row.children.forEach((cardGroup) => {
@@ -666,9 +987,8 @@ export function CardSphere({
                 cardGroup.userData.isFlipped = false;
               }
             } else if (isAudience) {
-              const shouldMaintainOrientation = trickState === 'cards-flipping' 
+              const shouldMaintainOrientation = trickState === 'cards-flipping'
                 || trickState === 'participant-selection'
-                || trickState === 'lock-and-reveal'
                 || trickState === 'sphere-aligned';
               
               if (shouldMaintainOrientation) {

@@ -27,6 +27,9 @@ import { easeInOutCubic } from "@/utils/easing";
 const _up = new THREE.Vector3(0, 1, 0);
 const _lookAtOrigin = new THREE.Vector3(0, 0, 0);
 const _tempMatrix = new THREE.Matrix4();
+const _cardWorldPos = new THREE.Vector3();
+const _liveTargetPos = new THREE.Vector3();
+const _liveTargetQuat = new THREE.Quaternion();
 
 export function Scene() {
   const { camera, gl, scene } = useThree();
@@ -54,6 +57,7 @@ export function Scene() {
   const sphereAlignedStartQuatRef = useRef<THREE.Quaternion | null>(null);
   const sphereAlignedTargetQuatRef = useRef<THREE.Quaternion | null>(null);
   const sphereAlignedAnimStartRef = useRef<number | null>(null);
+  const selectedCardObjectRef = useRef<THREE.Object3D | null>(null);
   const isDeviceMovementEnabled = useDeviceOrientationStore(
     (state) => state.isEnabled
   );
@@ -97,12 +101,15 @@ export function Scene() {
     }
   }, [currentState, viewType, isUnlinked, startUnlinkAnimation, resetInterpolation]);
   
-  // Lock audience camera into aligned position when entering sphere-aligned
+  // Lock audience camera into aligned position when entering sphere-aligned.
+  // Delay camera init until the sphere rotation animation completes so the card
+  // world-position used for targeting is the final settled position, not mid-rotation.
   useEffect(() => {
     if (currentState !== 'sphere-aligned' || viewType !== 'audience' || !selectedCardId) return;
     audienceCamLockedRef.current = true;
     setAudienceCamLocked(true);
-    sphereAlignedNeedsInitRef.current = true;
+    selectedCardObjectRef.current = null; // reset for fresh scene search
+    sphereAlignedNeedsInitRef.current = true; // begin immediately — live-track the rotating card
   }, [currentState, viewType, selectedCardId]);
 
   // Reset everything when returning to setup state
@@ -133,6 +140,7 @@ export function Scene() {
       sphereAlignedStartQuatRef.current = null;
       sphereAlignedTargetQuatRef.current = null;
       sphereAlignedAnimStartRef.current = null;
+      selectedCardObjectRef.current = null;
       
       // Reset camera to initial position
       const initialPosition = new THREE.Vector3(0, 2, 6);
@@ -226,61 +234,54 @@ export function Scene() {
     camera.quaternion.slerp(audienceCamTargetQuatRef.current, t);
   });
 
-  // Sphere-aligned camera: move the audience into a position where the line of sight
-  // passes through the selected card and the headset indicator at the sphere centre.
+  // Sphere-aligned camera: smoothly move the audience camera to face the selected card,
+  // live-tracking its position while the sphere rotates so both motions feel like one.
   useFrame(() => {
     if (viewType !== 'audience' || !audienceCamLockedRef.current) return;
 
-    // Phase 1: first frame — traverse scene to find card world position, compute target
+    // Phase 1: first frame — find the card object in the scene and cache a ref to it.
     if (sphereAlignedNeedsInitRef.current && selectedCardId) {
-      let cardWorldPos: THREE.Vector3 | null = null;
+      let found: THREE.Object3D | null = null;
       scene.traverse((obj) => {
-        if (cardWorldPos !== null) return;
-        if (obj.userData?.id === selectedCardId) {
-          cardWorldPos = new THREE.Vector3();
-          (obj as THREE.Object3D).getWorldPosition(cardWorldPos);
-        }
+        if (!found && obj.userData?.id === selectedCardId) found = obj;
       });
-
-      if (cardWorldPos !== null && (cardWorldPos as THREE.Vector3).length() > 0.01) {
-        const direction = (cardWorldPos as THREE.Vector3).normalize();
-        // Preserve the audience's current orbital distance from the sphere centre
-        const currentDist = camera.position.length() || TRICK_CONFIG.CAMERA.unlinkDistance;
-        const targetPos = direction.clone().multiplyScalar(currentDist);
-
-        // Target quaternion: look from targetPos straight toward the headset at origin
-        _tempMatrix.lookAt(targetPos, _lookAtOrigin, _up);
-        const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_tempMatrix);
-
+      if (found) {
+        selectedCardObjectRef.current = found;
         sphereAlignedStartPosRef.current = camera.position.clone();
-        sphereAlignedTargetPosRef.current = targetPos;
         sphereAlignedStartQuatRef.current = camera.quaternion.clone();
-        sphereAlignedTargetQuatRef.current = targetQuat;
         sphereAlignedAnimStartRef.current = Date.now();
         sphereAlignedNeedsInitRef.current = false;
       }
       return;
     }
 
+    const cardObj = selectedCardObjectRef.current;
     const startPos = sphereAlignedStartPosRef.current;
-    const targetPos = sphereAlignedTargetPosRef.current;
     const startQuat = sphereAlignedStartQuatRef.current;
-    const targetQuat = sphereAlignedTargetQuatRef.current;
-    if (!startPos || !targetPos || !startQuat || !targetQuat) return;
+    if (!cardObj || !startPos || !startQuat) return;
+
+    // Read the card's live world position (changes while sphere is still rotating)
+    cardObj.getWorldPosition(_cardWorldPos);
+    if (_cardWorldPos.length() < 0.01) return;
+
+    // Target: same orbital distance from centre, looking toward origin through card
+    const currentDist = startPos.length() || TRICK_CONFIG.CAMERA.unlinkDistance;
+    _liveTargetPos.copy(_cardWorldPos).normalize().multiplyScalar(currentDist);
+    _tempMatrix.lookAt(_liveTargetPos, _lookAtOrigin, _up);
+    _liveTargetQuat.setFromRotationMatrix(_tempMatrix);
 
     if (sphereAlignedAnimStartRef.current !== null) {
+      // Animated phase: lerp from start toward live target
       const elapsed = Date.now() - sphereAlignedAnimStartRef.current;
       const progress = Math.min(elapsed / TRICK_CONFIG.SPHERE_ALIGNMENT.audienceCamDuration, 1.0);
       const eased = easeInOutCubic(progress);
-
-      camera.position.lerpVectors(startPos, targetPos, eased);
-      camera.quaternion.slerpQuaternions(startQuat, targetQuat, eased);
-
+      camera.position.lerpVectors(startPos, _liveTargetPos, eased);
+      camera.quaternion.slerpQuaternions(startQuat, _liveTargetQuat, eased);
       if (progress >= 1.0) sphereAlignedAnimStartRef.current = null;
     } else {
-      // Animation complete — hold position so useCameraSync can't drift it
-      camera.position.copy(targetPos);
-      camera.quaternion.copy(targetQuat);
+      // Settled phase: gently hold on the card's final position
+      camera.position.lerp(_liveTargetPos, 0.1);
+      camera.quaternion.slerp(_liveTargetQuat, 0.1);
     }
   });
 
@@ -362,7 +363,7 @@ export function Scene() {
           target={[0, 0, 0]}
           enableDamping
           dampingFactor={0.1}
-          enabled={!isDeviceMovementEnabled && !(viewType === 'audience' && !isUnlinked)}
+          enabled={!isDeviceMovementEnabled && viewType !== 'audience'}
         />
       )}
       <DeviceOrientationControls enabled={isDeviceMovementEnabled && !isPresenting} />

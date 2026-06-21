@@ -152,6 +152,19 @@ export class SphereRotationSettledEvent implements ISocketEvent {
   }
 }
 
+export class SessionStateEvent implements ISocketEvent {
+  sessionStartTime: number;
+  rotationStopTime: number | null;
+  sphereRotation: number;
+  currentTrickState: string;
+  constructor(data: SessionStateEventData) {
+    this.sessionStartTime = data.sessionStartTime;
+    this.rotationStopTime = data.rotationStopTime;
+    this.sphereRotation = data.sphereRotation;
+    this.currentTrickState = data.currentTrickState;
+  }
+}
+
 export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
@@ -168,6 +181,7 @@ export const socketEvents = {
   "gallery-skip": MouseDownEvent,
   "pointer-hit": MouseDownEvent,
   "sphere-rotation-settled": SphereRotationSettledEvent,
+  "session-state": SessionStateEvent,
 } as const;
 
 export type SocketEvent = keyof typeof socketEvents;
