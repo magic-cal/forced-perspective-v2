@@ -73,6 +73,17 @@ export interface TrickResetEventData {
   timestamp: number;
 }
 
+export interface SessionStateEventData {
+  sessionStartTime: number;
+  rotationStopTime: number | null;
+  sphereRotation: number;
+  currentTrickState: string;
+}
+
+export interface SphereRotationSettledEventData {
+  rotation: number;
+}
+
 // Trick event classes
 export class TrickStateChangedEvent implements ISocketEvent {
   state: string;
@@ -134,6 +145,13 @@ export class TrickResetEvent implements ISocketEvent {
   }
 }
 
+export class SphereRotationSettledEvent implements ISocketEvent {
+  rotation: number;
+  constructor(data: SphereRotationSettledEventData) {
+    this.rotation = data.rotation;
+  }
+}
+
 export const socketEvents = {
   "mouse-down": MouseDownEvent,
   "camera-changed": CameraChangedEvent,
@@ -149,6 +167,7 @@ export const socketEvents = {
   "landmark-finish": MouseDownEvent,
   "gallery-skip": MouseDownEvent,
   "pointer-hit": MouseDownEvent,
+  "sphere-rotation-settled": SphereRotationSettledEvent,
 } as const;
 
 export type SocketEvent = keyof typeof socketEvents;

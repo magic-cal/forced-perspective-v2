@@ -1,0 +1,40 @@
+import { useShowRunnerChild } from 'slideshow-mel';
+import type { RunnerStep } from 'slideshow-mel';
+import { useTrickStore } from '@/store/useTrickStore';
+import { TrickState } from '@/types/trick';
+
+const TRICK_STEPS: RunnerStep[] = [
+  { id: 'setup', title: 'Setup', description: 'Cards face participant. Views synced.' },
+  { id: 'cards-flipping', title: 'Cards Flipping', description: 'Cards flipping to backs. Audience rotating.' },
+  { id: 'participant-selection', title: 'Participant Selection', description: 'Participant selecting a card.' },
+  { id: 'lock-and-reveal', title: 'Lock & Reveal', description: 'Selected card reveals forced value.' },
+  { id: 'sphere-aligned', title: 'Sphere Aligned', description: 'Sphere aligned. Ready for final flip.' },
+  { id: 'final-flip', title: 'Final Flip', description: 'Cards flipping to reveal.' },
+];
+
+// Serialisable descriptors only — no functions, safe to send via postMessage
+const ACTION_DESCRIPTORS = [{ key: 'reset', label: 'Reset Trick' }];
+
+export function useSlideshowMelIntegration() {
+  const { currentState, nextState, setState, resetTrick, selectedCardId } = useTrickStore();
+
+  const currentStepIndex = TRICK_STEPS.findIndex((s) => s.id === currentState);
+
+  const handleNext = () => {
+    // Mirror the canProgress guard from TrickControls
+    if (currentState === 'final-flip') return;
+    if (currentState === 'participant-selection' && !selectedCardId) return;
+    nextState();
+  };
+
+  useShowRunnerChild({
+    steps: TRICK_STEPS,
+    currentStepIndex,
+    onNext: handleNext,
+    onJumpToStep: (step) => setState(step.id as TrickState),
+    actions: ACTION_DESCRIPTORS,
+    onAction: (key) => {
+      if (key === 'reset') resetTrick();
+    },
+  });
+}

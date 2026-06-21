@@ -10,7 +10,25 @@ import {
   UnlinkTriggeredEventData,
   ParticipantRotationEventData,
   TrickResetEventData,
+  SphereRotationSettledEventData,
+  SessionStateEventData,
 } from "../../shared/socketEvents";
+
+interface SessionState {
+  sessionStartTime: number;
+  rotationStopTime: number | null;
+  sphereRotation: number;
+  currentTrickState: string;
+}
+
+function makeSessionState(): SessionState {
+  return {
+    sessionStartTime: Date.now(),
+    rotationStopTime: null,
+    sphereRotation: 0,
+    currentTrickState: "setup",
+  };
+}
 
 export class ForcedPerspectiveServer {
   public static readonly PORT: number = 8080;
@@ -39,6 +57,8 @@ export class ForcedPerspectiveServer {
   }
 
   private sockets(): void {
+    const session = makeSessionState();
+
     const eventListeners: EventListener[] = [
       {
         event: "mouse-down",
@@ -65,6 +85,10 @@ export class ForcedPerspectiveServer {
         // Client emits 'trick-state-change' (no trailing 'd') — keep both spellings
         event: "trick-state-change",
         callback: (data: TrickStateChangedEventData, broadcast) => {
+          session.currentTrickState = data.state;
+          if (data.state === "participant-selection") {
+            session.rotationStopTime = Date.now();
+          }
           broadcast("trick-state-change", data);
         },
       },
@@ -100,7 +124,18 @@ export class ForcedPerspectiveServer {
         event: "trick-reset",
         callback: (data: TrickResetEventData, broadcast) => {
           console.log("[server](trick-reset): %s", JSON.stringify(data));
+          session.sessionStartTime = Date.now();
+          session.rotationStopTime = null;
+          session.sphereRotation = 0;
+          session.currentTrickState = "setup";
           broadcast("trick-reset", data);
+        },
+      },
+      {
+        event: "sphere-rotation-settled",
+        callback: (data: SphereRotationSettledEventData, broadcast) => {
+          session.sphereRotation = data.rotation;
+          broadcast("sphere-rotation-settled", data);
         },
       },
       {
@@ -132,7 +167,16 @@ export class ForcedPerspectiveServer {
     this.socketManager = new SocketManager(
       this.server,
       this.port,
-      eventListeners
+      eventListeners,
+      (emit) => {
+        const payload: SessionStateEventData = {
+          sessionStartTime: session.sessionStartTime,
+          rotationStopTime: session.rotationStopTime,
+          sphereRotation: session.sphereRotation,
+          currentTrickState: session.currentTrickState,
+        };
+        emit("session-state", payload);
+      },
     );
     this.socketManager.startServer();
   }

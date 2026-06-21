@@ -7,6 +7,7 @@ import { TrickState } from "@/types/trick";
 import { useTrickStore } from "@/store/useTrickStore";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
 import { useSocket } from "@/sockets/SocketProvider";
+import { useSessionStore } from "@/store/sessionStore";
 import { FORCED_CARD } from "@/utils/cardForcing";
 import { TRICK_CONFIG } from "@/config/trick";
 import { easeOutQuad, easeInOutQuad, easeInQuad } from "@/utils/easing";
@@ -67,6 +68,8 @@ export function CardSphere({
   const { nextState, lockSelection, setSelectedCard } = useTrickStore();
   const setLegacySelectedCard = useCardSelectionStore((s) => s.setSelectedCard);
   const socket = useSocket();
+  const sphereRotationFromSession = useSessionStore((s) => s.sphereRotation);
+  const hasSphereRotationEmittedRef = useRef(false);
   const animationStartTimeRef = useRef<number | null>(null);
   const sphereAlignmentStartRef = useRef<number | null>(null);
   // Refs instead of state: only read inside useFrame/callbacks, never drive JSX
@@ -142,6 +145,7 @@ export function CardSphere({
       targetSphereRotationRef.current = null;
       rowRotationSpeedsRef.current = new Map();
       frozenCardRotationsRef.current = new Map();
+      hasSphereRotationEmittedRef.current = false;
       
       // Reset sphere rotation to initial state
       if (sphereRef.current) {
@@ -200,6 +204,15 @@ export function CardSphere({
     }
   }, [effectiveRotationSpeed]);
   
+  // Snap sphere rotation for late-joining clients that missed the alignment animation
+  useEffect(() => {
+    if (!sphereRef.current || sphereRotationFromSession === 0) return;
+    const isPostAlignment = trickState === 'sphere-aligned' || trickState === 'final-flip';
+    if (isPostAlignment && sphereAlignmentStartRef.current === null) {
+      sphereRef.current.rotation.y = sphereRotationFromSession;
+    }
+  }, [sphereRotationFromSession, trickState]);
+
   // Handle card selection during participant-selection state
   useEffect(() => {
     if (trickState === 'participant-selection' && selectedCardId) {
@@ -371,48 +384,61 @@ export function CardSphere({
         const isAligning = trickState === 'lock-and-reveal' && sphereAlignmentStartRef.current !== null && targetSphereRotationRef.current !== null;
       
       // Stop rotation during participant-selection and all subsequent states
-      const shouldStopRotation = trickState === 'participant-selection' 
-        || trickState === 'lock-and-reveal' 
-        || trickState === 'sphere-aligned' 
+      const shouldStopRotation = trickState === 'participant-selection'
+        || trickState === 'lock-and-reveal'
+        || trickState === 'sphere-aligned'
         || trickState === 'final-flip';
-      
+
       if (isAligning && sphereAlignmentStartRef.current) {
         const elapsed = currentTime - sphereAlignmentStartRef.current;
         const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
         const totalDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
-        
+
         // Phase 1: Slow down row rotations (first half of animation)
         if (elapsed < slowdownDuration) {
           const slowdownProgress = elapsed / slowdownDuration;
           const slowdownFactor = 1 - easeInOutQuad(slowdownProgress);
-          
+
           sphereRef.current.children.forEach((row, index) => {
             const baseSpeed = rowRotationSpeedsRef.current.get(index) || 0;
             row.rotation.y += baseSpeed * slowdownFactor * delta;
           });
         }
-        
+
         // Phase 2: Rotate entire sphere to align card (throughout animation)
         const alignProgress = Math.min(elapsed / totalDuration, 1.0);
         const easedAlignProgress = easeInOutQuad(alignProgress);
-        
+
         // Interpolate sphere rotation
         sphereRef.current.rotation.y = (targetSphereRotationRef.current ?? 0) * easedAlignProgress;
-        
+
         // Complete animation
         if (alignProgress >= 1.0) {
           sphereAlignmentStartRef.current = null;
           // Only transition state once (from spectator view)
           if (viewType === 'participant') {
             nextState();
+            // Broadcast final sphere angle so late-joining audience views can snap to it
+            if (!hasSphereRotationEmittedRef.current) {
+              hasSphereRotationEmittedRef.current = true;
+              socket?.emit('sphere-rotation-settled', { rotation: sphereRef.current.rotation.y });
+            }
           }
         }
-      } else if (!isAligning && !shouldStopRotation) {
-        // Normal rotation when not aligning and not in participant-selection
-        sphereRef.current.children.forEach((row, index) => {
-          const direction = index % 2 === 0 ? 1 : -1;
-          row.rotation.y += effectiveRotationSpeed * direction * delta;
-        });
+      } else if (!isAligning) {
+        // Epoch-based row rotation: computed from a shared session clock so any client
+        // that joins late snaps to the correct angle immediately, without needing to
+        // have been running since t=0.
+        const { sessionStartTime, rotationStopTime } = useSessionStore.getState();
+        const effectiveNow = rotationStopTime ? Math.min(currentTime, rotationStopTime) : currentTime;
+        const elapsedSeconds = (effectiveNow - sessionStartTime) / 1000;
+
+        if (!shouldStopRotation || rotationStopTime !== null) {
+          sphereRef.current.children.forEach((row, index) => {
+            const direction = index % 2 === 0 ? 1 : -1;
+            row.rotation.y = effectiveRotationSpeed * direction * elapsedSeconds;
+          });
+        }
       }
       
       // Update card orientations and animations

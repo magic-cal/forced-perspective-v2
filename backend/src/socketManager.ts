@@ -9,16 +9,26 @@ export interface EventListener<T = any> {
 
 type Port = string | number;
 
+export type EmitToClient = (event: string, data: unknown) => void;
+
 export default class SocketManager {
   private server: HttpServer;
   private port: Port;
   private io: SocketIOServer;
   private listeners: EventListener[] = [];
-  constructor(server: HttpServer, port: Port, events: EventListener[]) {
+  private onClientConnect?: (emit: EmitToClient) => void;
+
+  constructor(
+    server: HttpServer,
+    port: Port,
+    events: EventListener[],
+    onClientConnect?: (emit: EmitToClient) => void,
+  ) {
     this.port = port;
     this.server = server;
     this.io = this.createServer();
     this.listeners = events;
+    this.onClientConnect = onClientConnect;
   }
   createServer() {
     const io = new SocketIOServer(this.server, {
@@ -45,6 +55,10 @@ export default class SocketManager {
       });
 
       socket.broadcast.emit("new-user");
+
+      if (this.onClientConnect) {
+        this.onClientConnect((event, data) => socket.emit(event, data));
+      }
 
       this.registerSocketListeners(socket, this.listeners);
 

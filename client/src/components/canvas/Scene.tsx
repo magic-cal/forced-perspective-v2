@@ -21,8 +21,6 @@ import { useSocket } from "@/sockets/SocketProvider";
 import { useTrickStore } from "@/store/useTrickStore";
 import { TRICK_CONFIG } from "@/config/trick";
 
-// Reusable — avoids allocations inside useFrame
-const _sphereCenter = new THREE.Vector3(0, 0, 0);
 
 export function Scene() {
   const { camera, gl } = useThree();
@@ -180,14 +178,14 @@ export function Scene() {
     return () => { socket.off('participant-rotation', handleRotationUpdate); };
   }, [socket, viewType]);
 
-  // Audience: slerp camera quaternion + lerp position to match the spectator each frame.
+  // Audience: slerp camera quaternion to match the spectator's head rotation each frame.
   // Quaternion slerp avoids Euler gimbal lock at extreme pitch angles.
-  // Position lerps to the sphere center [0,0,0] — the spectator's standing point in VR.
+  // Position is owned entirely by useCameraSync (camera-update events) — do not write
+  // camera.position here or it will fight the sync lerp and cause visible pulsing.
   useFrame((_, delta) => {
     if (viewType !== 'audience' || isUnlinked || !hasAudienceCamTargetRef.current) return;
     const t = Math.min(0.15 * delta * 60, 1);
     camera.quaternion.slerp(audienceCamTargetQuatRef.current, t);
-    camera.position.lerp(_sphereCenter, t);
   });
 
   // Magician can force-skip the gallery on all clients
