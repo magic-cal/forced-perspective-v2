@@ -56,6 +56,7 @@ export default class SocketManager {
 
   private registerSocketListeners(socket: Socket, listeners: EventListener[]) {
     const broadcast = (ev: SocketEvent, ...args: any[]) => {
+      // Broadcast to other clients (not sender)
       return socket.broadcast.emit(ev, ...args);
     };
 

@@ -14,6 +14,7 @@ import { SocketEventService } from "./sockets/SocketEventService";
 import { TypedSocketEventService } from "./sockets/TypedSocketEventService";
 import Resizer from "./utils/resizer";
 import Initialisation from "./sections/Initialisation";
+import { useGameStore } from "@/store/gameStore";
 
 export interface ForcedPerspectiveOptions {
   debug: boolean;
@@ -101,32 +102,39 @@ class ForcedPerspective {
   }
   addCameraSynchronization() {
     this.cameraUpdateService.addEventListener((data) => {
-      this.camera.position.set(
-        data.position.x,
-        data.position.y,
-        data.position.z
-      );
-      this.camera.rotation.set(
-        data.rotation.x,
-        data.rotation.y,
-        data.rotation.z
-      );
+      // Only update camera if role is 'audience'
+      if (useGameStore.getState().role === "audience") {
+        this.camera.position.set(
+          data.position.x,
+          data.position.y,
+          data.position.z
+        );
+        this.camera.rotation.set(
+          data.rotation.x,
+          data.rotation.y,
+          data.rotation.z
+        );
+      }
     });
+    // Only emit camera changes if the user is the spectator
+    const getRole = () => useGameStore.getState().role;
     this.controls.addEventListener(
       "change",
       throttle(() => {
-        this.cameraUpdateService.emit({
-          position: {
-            x: this.camera.position.x,
-            y: this.camera.position.y,
-            z: this.camera.position.z,
-          },
-          rotation: {
-            x: this.camera.rotation.x,
-            y: this.camera.rotation.y,
-            z: this.camera.rotation.z,
-          },
-        });
+        if (getRole() === "spectator") {
+          this.cameraUpdateService.emit({
+            position: {
+              x: this.camera.position.x,
+              y: this.camera.position.y,
+              z: this.camera.position.z,
+            },
+            rotation: {
+              x: this.camera.rotation.x,
+              y: this.camera.rotation.y,
+              z: this.camera.rotation.z,
+            },
+          });
+        }
       }, CAMERA_THROTTLE_MS)
     );
   }

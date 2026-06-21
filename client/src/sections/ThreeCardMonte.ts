@@ -1,3 +1,4 @@
+import { Scene, PerspectiveCamera } from "three";
 import PlayingCardManager from "../objects/PlayingCardManager";
 import { PositionGenerator } from "../objects/PositionGenerator";
 import { CARD_DIMENSIONS, CARD_PADDING, threeCardMonte } from "../types/cards";
@@ -6,8 +7,8 @@ import Section from "./Section";
 
 export default class ThreeCardMonte extends Section {
   constructor(
-    scene: THREE.Scene,
-    camera: THREE.PerspectiveCamera,
+    scene: Scene,
+    camera: PerspectiveCamera,
     cardManager: PlayingCardManager
   ) {
     super(scene, camera, cardManager);

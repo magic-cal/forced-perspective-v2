@@ -1,10 +1,15 @@
 import express from "express";
-import SocketManager, { EventListener } from "./socketManager";
 import { createServer, Server as HttpServer } from "http";
+import SocketManager, { EventListener } from "./socketManager";
 import {
-  CameraChangedEvent,
-  CameraChangedEventData,
   MouseDownEventData,
+  CameraChangedEventData,
+  TrickStateChangedEventData,
+  CardSelectedEventData,
+  CardForcedEventData,
+  UnlinkTriggeredEventData,
+  ParticipantRotationEventData,
+  TrickResetEventData,
 } from "../../shared/socketEvents";
 
 export class ForcedPerspectiveServer {
@@ -47,6 +52,79 @@ export class ForcedPerspectiveServer {
         callback: (data: CameraChangedEventData, broadcast) => {
           console.log("[server](camera-changed): %s", JSON.stringify(data));
           broadcast("camera-changed", data);
+        },
+      },
+      {
+        event: "camera-update",
+        callback: (data: any, broadcast) => {
+          // High frequency event - don't log
+          broadcast("camera-update", data);
+        },
+      },
+      {
+        // Client emits 'trick-state-change' (no trailing 'd') — keep both spellings
+        event: "trick-state-change",
+        callback: (data: TrickStateChangedEventData, broadcast) => {
+          broadcast("trick-state-change", data);
+        },
+      },
+      {
+        event: "card-selected",
+        callback: (data: CardSelectedEventData, broadcast) => {
+          console.log("[server](card-selected): %s", JSON.stringify(data));
+          broadcast("card-selected", data);
+        },
+      },
+      {
+        event: "card-forced",
+        callback: (data: CardForcedEventData, broadcast) => {
+          console.log("[server](card-forced): %s", JSON.stringify(data));
+          broadcast("card-forced", data);
+        },
+      },
+      {
+        event: "unlink-triggered",
+        callback: (data: UnlinkTriggeredEventData, broadcast) => {
+          console.log("[server](unlink-triggered): %s", JSON.stringify(data));
+          broadcast("unlink-triggered", data);
+        },
+      },
+      {
+        event: "participant-rotation",
+        callback: (data: ParticipantRotationEventData, broadcast) => {
+          // Don't log this one as it's high frequency
+          broadcast("participant-rotation", data);
+        },
+      },
+      {
+        event: "trick-reset",
+        callback: (data: TrickResetEventData, broadcast) => {
+          console.log("[server](trick-reset): %s", JSON.stringify(data));
+          broadcast("trick-reset", data);
+        },
+      },
+      {
+        event: "landmark-index",
+        callback: (data: any, broadcast) => {
+          broadcast("landmark-index", data);
+        },
+      },
+      {
+        event: "landmark-finish",
+        callback: (data: any, broadcast) => {
+          broadcast("landmark-finish", data);
+        },
+      },
+      {
+        event: "gallery-skip",
+        callback: (_data: any, broadcast) => {
+          broadcast("gallery-skip", null);
+        },
+      },
+      {
+        event: "pointer-hit",
+        callback: (data: any, broadcast) => {
+          broadcast("pointer-hit", data);
         },
       },
     ];
