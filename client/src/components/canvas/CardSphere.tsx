@@ -10,7 +10,7 @@ import { useSocket } from "@/sockets/SocketProvider";
 import { useSessionStore } from "@/store/sessionStore";
 import { FORCED_CARD } from "@/utils/cardForcing";
 import { TRICK_CONFIG } from "@/config/trick";
-import { easeOutQuad, easeInOutQuad, easeInQuad } from "@/utils/easing";
+import { easeOutQuad, easeInOutQuad, easeInQuad, easeInOutCubic } from "@/utils/easing";
 
 interface CardSphereProps {
   radius?: number;
@@ -42,6 +42,17 @@ const _CENTER = new THREE.Vector3(0, 0, 0);
 const _outwardDir = new THREE.Vector3();
 const _posOffset = new THREE.Vector3();
 const _animResult = { positionOffset: _posOffset, rotationProgress: 0, isComplete: false };
+const _scatterTarget = new THREE.Vector3();
+
+const SCATTER_DISTANCE = 350;
+const SCATTER_DURATION = 3000;
+const SCATTER_STAGGER_MS = 8;
+
+interface ScatterEntry {
+  startTime: number;
+  localStartPos: THREE.Vector3;
+  localDirection: THREE.Vector3;
+}
 
 export function CardSphere({
   radius = 15,
@@ -76,6 +87,7 @@ export function CardSphere({
   const targetSphereRotationRef = useRef<number | null>(null);
   const rowRotationSpeedsRef = useRef<Map<number, number>>(new Map());
   const frozenCardRotationsRef = useRef<Map<number, THREE.Quaternion>>(new Map());
+  const scatterDataRef = useRef<Map<number, ScatterEntry>>(new Map());
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -108,9 +120,23 @@ export function CardSphere({
     animationStartTimeRef.current = currentTime;
   };
   
-  // Trigger flip animation when entering cards-flipping or final-flip state
+  // Trigger flip animation when entering cards-flipping state
   useEffect(() => {
-    if ((trickState === 'cards-flipping' || trickState === 'final-flip') && animatingCardIndicesRef.current.size === 0 && totalCardCountRef.current > 0) {
+    if (trickState === 'cards-flipping' && animatingCardIndicesRef.current.size === 0 && totalCardCountRef.current > 0) {
+      startFlipAnimation();
+    }
+  }, [trickState, viewType]);
+
+  // Trigger final flip — always clear and restart so early state transitions don't skip it
+  useEffect(() => {
+    if (trickState === 'final-flip' && totalCardCountRef.current > 0) {
+      animatingCardIndicesRef.current = new Map();
+      // Ensure all spectator cards are marked as flipped so the animation starts from backs-showing state
+      if (viewType === 'participant') {
+        const allFlipped = new Set<number>();
+        for (let i = 0; i < totalCardCountRef.current; i++) allFlipped.add(i);
+        flippedCardIndicesRef.current = allFlipped;
+      }
       startFlipAnimation();
     }
   }, [trickState, viewType]);
@@ -139,6 +165,7 @@ export function CardSphere({
     if (trickState === 'setup') {
       flippedCardIndicesRef.current = new Set();
       animatingCardIndicesRef.current = new Map();
+      scatterDataRef.current = new Map();
       setForcedCardValue(null);
       animationStartTimeRef.current = null;
       sphereAlignmentStartRef.current = null;
@@ -207,7 +234,7 @@ export function CardSphere({
   // Snap sphere rotation for late-joining clients that missed the alignment animation
   useEffect(() => {
     if (!sphereRef.current || sphereRotationFromSession === 0) return;
-    const isPostAlignment = trickState === 'sphere-aligned' || trickState === 'final-flip';
+    const isPostAlignment = trickState === 'sphere-aligned' || trickState === 'final-flip' || trickState === 'scatter';
     if (isPostAlignment && sphereAlignmentStartRef.current === null) {
       sphereRef.current.rotation.y = sphereRotationFromSession;
     }
@@ -227,9 +254,76 @@ export function CardSphere({
         lockSelection();
       }
       setForcedCardValue(FORCED_CARD);
-      startSphereAlignment(selectedCardId);
+      // Reset alignment start time so animation plays fresh when lock-and-reveal is entered
+      // (target angle was already computed when the card was selected)
+      sphereAlignmentStartRef.current = Date.now();
     }
-  }, [trickState, selectedCardId, lockSelection, startSphereAlignment, viewType]);
+  }, [trickState, selectedCardId, lockSelection, viewType]);
+
+  // Initialize scatter animation when entering scatter state
+  useEffect(() => {
+    if (trickState !== 'scatter' || !sphereRef.current) return;
+
+    sphereRef.current.updateWorldMatrix(true, true);
+
+    const scatterData = new Map<number, ScatterEntry>();
+    const currentTime = Date.now();
+
+    const cardDataList: {
+      cardIndex: number;
+      worldPos: THREE.Vector3;
+      theta: number;
+      row: THREE.Object3D;
+    }[] = [];
+
+    sphereRef.current.children.forEach((row) => {
+      row.children.forEach((cardGroup) => {
+        const cardComponent = cardGroup.children[0] as THREE.Group;
+        const cardId = cardComponent?.userData?.id as string;
+        if (cardId === selectedCardId) return;
+
+        const worldPos = new THREE.Vector3();
+        cardGroup.getWorldPosition(worldPos);
+        const theta = Math.atan2(worldPos.z, worldPos.x);
+
+        cardDataList.push({
+          cardIndex: cardGroup.userData.cardIndex as number,
+          worldPos,
+          theta,
+          row,
+        });
+      });
+    });
+
+    // Sort by theta so cards launch in a sweeping wave around the sphere (flock effect)
+    cardDataList.sort((a, b) => a.theta - b.theta);
+
+    const rowInvMatrix = new THREE.Matrix4();
+
+    cardDataList.forEach((data, i) => {
+      const { worldPos, row, cardIndex, theta } = data;
+
+      // Outward direction with coherent lateral drift — neighbouring cards share similar trajectories
+      const outDir = worldPos.clone().normalize();
+      outDir.x += Math.sin(theta * 1.7) * 0.15;
+      outDir.y += 0.28;
+      outDir.z += Math.cos(theta * 1.7) * 0.15;
+      outDir.normalize();
+
+      // Convert world direction to row's local space so position.set works correctly
+      rowInvMatrix.copy((row as THREE.Object3D).matrixWorld).invert();
+      const localDirection = outDir.clone().transformDirection(rowInvMatrix).normalize();
+      const localStartPos = (row as THREE.Object3D).worldToLocal(worldPos.clone());
+
+      scatterData.set(cardIndex, {
+        startTime: currentTime + i * SCATTER_STAGGER_MS,
+        localStartPos,
+        localDirection,
+      });
+    });
+
+    scatterDataRef.current = scatterData;
+  }, [trickState, selectedCardId]);
 
   // Card click — centralised here so Card components don't need store/socket subscriptions
   const handleCardClick = useCallback((cardId: string, cardSuit: string, cardValue: string) => {
@@ -387,7 +481,8 @@ export function CardSphere({
       const shouldStopRotation = trickState === 'participant-selection'
         || trickState === 'lock-and-reveal'
         || trickState === 'sphere-aligned'
-        || trickState === 'final-flip';
+        || trickState === 'final-flip'
+        || trickState === 'scatter';
 
       if (isAligning && sphereAlignmentStartRef.current) {
         const elapsed = currentTime - sphereAlignmentStartRef.current;
@@ -444,6 +539,25 @@ export function CardSphere({
       // Update card orientations and animations
       sphereRef.current.children.forEach((row) => {
         row.children.forEach((cardGroup) => {
+          // Scatter state: cards fly away like a flock of birds; selected card stays
+          if (trickState === 'scatter') {
+            const cardComponent = cardGroup.children[0] as THREE.Group;
+            const cardId = cardComponent?.userData?.id as string;
+            if (cardId !== selectedCardId) {
+              const scatter = scatterDataRef.current.get(cardGroup.userData.cardIndex as number);
+              if (scatter) {
+                const elapsed = currentTime - scatter.startTime;
+                if (elapsed >= 0) {
+                  const progress = Math.min(elapsed / SCATTER_DURATION, 1.0);
+                  const eased = easeInOutCubic(progress);
+                  _scatterTarget.copy(scatter.localStartPos).addScaledVector(scatter.localDirection, eased * SCATTER_DISTANCE);
+                  cardGroup.position.copy(_scatterTarget);
+                }
+              }
+            }
+            return;
+          }
+
           const currentCardIndex = cardGroup.userData.cardIndex as number;
           const isAnimating = animatingCardIndicesRef.current.has(currentCardIndex);
           const hasBeenFlipped = flippedCardIndicesRef.current.has(currentCardIndex);

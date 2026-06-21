@@ -11,6 +11,7 @@ const TRICK_STEPS: RunnerStep[] = [
   { id: 'lock-and-reveal',       title: 'Lock & Reveal',        description: 'Selected card reveals forced value.' },
   { id: 'sphere-aligned',        title: 'Sphere Aligned',       description: 'Sphere aligned. Ready for final flip.' },
   { id: 'final-flip',            title: 'Final Flip',           description: 'Cards flipping to reveal.' },
+  { id: 'scatter',               title: 'Scatter',              description: 'Cards scatter away. Selected card remains.' },
 ];
 
 // Serialisable descriptors only — no functions, safe to send via postMessage
@@ -24,7 +25,7 @@ export function useSlideshowMelIntegration() {
 
   const handleNext = () => {
     // Mirror the canProgress guard from TrickControls
-    if (currentState === 'final-flip') return;
+    if (currentState === 'scatter') return;
     if (currentState === 'participant-selection' && !selectedCardId) return;
     nextState();
     // nextState() is synchronous — getState() reflects the new value immediately

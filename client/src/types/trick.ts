@@ -4,7 +4,8 @@ export type TrickState =
   | 'participant-selection'
   | 'lock-and-reveal'
   | 'sphere-aligned'
-  | 'final-flip';
+  | 'final-flip'
+  | 'scatter';
 
 export type ViewType = 'participant' | 'audience';
 

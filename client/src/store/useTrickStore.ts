@@ -25,6 +25,7 @@ const STATE_SEQUENCE: TrickState[] = [
   'lock-and-reveal',
   'sphere-aligned',
   'final-flip',
+  'scatter',
 ];
 
 export const useTrickStore = create<TrickStore>((set, get) => ({
