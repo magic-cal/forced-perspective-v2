@@ -50,6 +50,10 @@ const _boidRight = new THREE.Vector3();
 const _boidFace  = new THREE.Vector3();
 const _boidUp    = new THREE.Vector3();
 const _boidMat4  = new THREE.Matrix4();
+let _viewPX = 0, _viewPY = 0, _viewPZ = 0; // camera view attraction point, updated each frame
+const _frustum    = new THREE.Frustum();
+const _frustumMat = new THREE.Matrix4();
+const _frustumPt  = new THREE.Vector3();
 
 const SCATTER_DISTANCE = 350;
 const SCATTER_DURATION = 3000;
@@ -61,19 +65,25 @@ interface ScatterEntry {
   localDirection: THREE.Vector3;
 }
 
-// Boid simulation constants — separation + alignment only (no cohesion = no balling up)
-const BOID_SPEED        = 0.14;       // cruise speed (units/frame at 60 fps)
-const BOID_SPEED_VAR    = 0.03;       // tight speed band so the flock feels cohesive
-const BOID_SEP_DIST_SQ  = 30;         // separation radius² ≈ 5.5 units (>1 card body)
-const BOID_ALIGN_DIST_SQ = 400;       // alignment radius² = 20 units — large neighbourhood creates wave / leader patterns
-const BOID_BOUNDS_MIN   = 42;         // inner shell — keep away from scene centre and cameras
-const BOID_BOUNDS_MAX   = 60;         // outer shell — stay within visible frustum
-const BOID_SEP_W        = 0.12;       // strong separation so cards respect each other's space
-const BOID_ALIGN_W      = 0.05;       // alignment weight — drives leader/follower dynamics
-const BOID_BOUNDS_W     = 0.05;       // shell boundary steering weight
-const BOID_NOISE        = 0.003;      // tiny random nudge keeps flow organic and prevents lock-in
-const ORIENT_LERP       = 0.08;       // fraction to slerp orientation per frame — no snapping
-const FORMING_DURATION  = 5000;       // ms for sphere formation animation
+// Non-tunable boid constants
+const BOID_SPEED_VAR     = 0.05;
+const BOID_SEP_DIST_SQ   = 30;
+const BOID_ALIGN_DIST_SQ = 400;
+const BOID_BOUNDS_MIN    = 55;
+const BOID_BOUNDS_MAX    = 82;
+const FORMING_DURATION   = 5000;
+
+// Tunable boid config — mutated directly by BoidDebugPanel sliders each frame
+export const boidConfig = {
+  BOID_SPEED:      0.22,   // cruise speed (units/frame at 60 fps)
+  BOID_SEP_W:      0.07,   // separation weight
+  BOID_ALIGN_W:    0.01,   // alignment weight
+  BOID_BOUNDS_W:   0.05,   // shell boundary steering weight
+  BOID_NOISE:      0.002,  // random nudge per frame
+  BOID_VIEW_W:     4,      // inverse-square pull toward camera view point
+  BOID_CARD_SCALE: 0.7,    // visual scale during murmuration
+  ORIENT_LERP:     0.05,   // orientation slerp fraction per frame
+};
 
 // Pre-allocated arrays for boid position snapshot (avoids per-frame allocations)
 const MAX_BOID_CARDS = 1024;
@@ -247,9 +257,10 @@ export function CardSphere({
           r * Math.cos(phi),
           r * Math.sin(phi) * Math.sin(theta),
         );
+        cardGroup.scale.setScalar(boidConfig.BOID_CARD_SCALE);
 
         // Random initial velocity near cruise speed
-        const speed = BOID_SPEED + (Math.random() - 0.5) * BOID_SPEED_VAR * 2;
+        const speed = boidConfig.BOID_SPEED + (Math.random() - 0.5) * BOID_SPEED_VAR * 2;
         const vPhi = Math.acos(1 - 2 * Math.random());
         const vTheta = Math.random() * Math.PI * 2;
         boidData.set(idx, {
@@ -301,7 +312,7 @@ export function CardSphere({
     sphereRef.current.children.forEach((row) => {
       row.children.forEach((cardGroup) => {
         const idx = cardGroup.userData.cardIndex as number;
-        stagger.set(idx, Math.random() * FORMING_DURATION * 0.4);
+        stagger.set(idx, Math.random() * FORMING_DURATION * 0.25);
         const basePos = cardGroup.userData.basePosition as THREE.Vector3;
         const savedPos = cardGroup.position.clone();
         const savedQ   = cardGroup.quaternion.clone();
@@ -690,6 +701,30 @@ export function CardSphere({
         const isForming      = trickState === 'forming' && formingStartTimeRef.current !== null;
         const formingElapsed = isForming ? (currentTime - formingStartTimeRef.current!) : 0;
 
+        // Read tunable config once per frame so slider changes take effect immediately
+        const { BOID_SEP_W, BOID_ALIGN_W, BOID_BOUNDS_W, BOID_NOISE, BOID_VIEW_W, BOID_SPEED, BOID_CARD_SCALE, ORIENT_LERP } = boidConfig;
+
+        // Update frustum once per frame for view-attraction culling
+        _frustumMat.multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse);
+        _frustum.setFromProjectionMatrix(_frustumMat);
+
+        // Camera view attraction point — shoot a ray from the camera forward and find
+        // where it hits the shell midpoint sphere. Both the spectator (at origin) and
+        // the audience (inside shell, looking through the sphere) are inside the shell,
+        // so this always resolves to a positive-t intersection in front of the camera.
+        {
+          const me = state.camera.matrixWorld.elements;
+          const cfx = -me[8], cfy = -me[9], cfz = -me[10]; // camera -Z = world forward
+          const cpx = state.camera.position.x, cpy = state.camera.position.y, cpz = state.camera.position.z;
+          const shellMid = (BOID_BOUNDS_MIN + BOID_BOUNDS_MAX) * 0.5;
+          const pDotD = cpx * cfx + cpy * cfy + cpz * cfz;
+          const disc  = pDotD * pDotD - (cpx * cpx + cpy * cpy + cpz * cpz - shellMid * shellMid);
+          const t     = disc >= 0 ? -pDotD + Math.sqrt(disc) : shellMid;
+          _viewPX = cpx + cfx * t;
+          _viewPY = cpy + cfy * t;
+          _viewPZ = cpz + cfz * t;
+        }
+
         // --- per-boid forces ---
         for (let i = 0; i < boidCount; i++) {
           const boid = boidDataRef.current.get(_boidIdxArr[i]);
@@ -707,18 +742,29 @@ export function CardSphere({
           // Boid forces scale to zero as card homes in so homing force dominates
           const boidScale    = isForming ? Math.max(0.0, 1 - cardEased * 0.9) : 1.0;
 
-          // Pre-compute distance to sphere slot (used for snap check and speed tuning)
+          // Pre-compute distance to sphere slot (used for final approach and speed tuning)
           const homeBase   = isForming && cardEased > 0.05 ? (obj.userData.basePosition as THREE.Vector3) : null;
           const distToHome = homeBase ? obj.position.distanceTo(homeBase) : Infinity;
 
-          // Distance-based snap — card arrives when it gets within 0.8 units of its slot
-          if (homeBase && distToHome < 0.8) {
+          // Smooth final approach — within 2 units, lerp directly to avoid visible pop.
+          // Scale grows back to full size as the card settles into its slot.
+          if (homeBase && distToHome < 2.0) {
             boid.velocity.set(0, 0, 0);
-            obj.position.copy(homeBase);
+            const approachT = 1.0 - distToHome / 2.0;
+            obj.scale.setScalar(BOID_CARD_SCALE + (1 - BOID_CARD_SCALE) * approachT);
+            obj.position.lerp(homeBase, 0.15);
             const tQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
-            if (tQ) obj.quaternion.copy(tQ);
+            if (tQ) obj.quaternion.slerp(tQ, 0.2);
+            if (distToHome < 0.05) {
+              obj.position.copy(homeBase);
+              obj.scale.setScalar(1.0);
+              if (tQ) obj.quaternion.copy(tQ);
+            }
             continue;
           }
+
+          // Still flying — keep bird scale
+          obj.scale.setScalar(BOID_CARD_SCALE);
 
           let sepX = 0, sepY = 0, sepZ = 0;
           let alignVx = 0, alignVy = 0, alignVz = 0, alignN = 0;
@@ -740,33 +786,38 @@ export function CardSphere({
             }
           }
 
-          // Separation — scaled down as card approaches sphere slot
+          // Separation
           boid.velocity.x += sepX * BOID_SEP_W * boidScale;
           boid.velocity.y += sepY * BOID_SEP_W * boidScale;
           boid.velocity.z += sepZ * BOID_SEP_W * boidScale;
 
-          // Alignment — scaled down so homing force dominates near completion
+          // Alignment
           if (alignN > 0) {
             boid.velocity.x += (alignVx / alignN - boid.velocity.x) * BOID_ALIGN_W * boidScale;
             boid.velocity.y += (alignVy / alignN - boid.velocity.y) * BOID_ALIGN_W * boidScale;
             boid.velocity.z += (alignVz / alignN - boid.velocity.z) * BOID_ALIGN_W * boidScale;
           }
 
-          // Shell boundary — outer always; inner shrinks during forming so cards can reach sphere slots
+          // Shell boundary — gradual ramp so turns aren't abrupt at the shell edge
           const dist = Math.sqrt(px * px + py * py + pz * pz);
           if (dist > 0.001) {
             const invD = 1 / dist;
             if (dist > BOID_BOUNDS_MAX) {
-              boid.velocity.x -= px * invD * BOID_BOUNDS_W * boidScale;
-              boid.velocity.y -= py * invD * BOID_BOUNDS_W * boidScale;
-              boid.velocity.z -= pz * invD * BOID_BOUNDS_W * boidScale;
+              // Force grows proportionally beyond the boundary — smooth curve-away
+              const excess = Math.min((dist - BOID_BOUNDS_MAX) / 8, 1.5);
+              const w = BOID_BOUNDS_W * (1 + excess) * boidScale;
+              boid.velocity.x -= px * invD * w;
+              boid.velocity.y -= py * invD * w;
+              boid.velocity.z -= pz * invD * w;
             }
             // During forming, only guard against going inside the sphere itself (not the outer shell)
             const innerBound = isForming ? 18 : BOID_BOUNDS_MIN;
             if (dist < innerBound) {
-              boid.velocity.x += px * invD * BOID_BOUNDS_W;
-              boid.velocity.y += py * invD * BOID_BOUNDS_W;
-              boid.velocity.z += pz * invD * BOID_BOUNDS_W;
+              const deficit = Math.min((innerBound - dist) / 8, 1.5);
+              const w = BOID_BOUNDS_W * (1 + deficit);
+              boid.velocity.x += px * invD * w;
+              boid.velocity.y += py * invD * w;
+              boid.velocity.z += pz * invD * w;
             }
           }
 
@@ -774,6 +825,19 @@ export function CardSphere({
           boid.velocity.x += (Math.random() - 0.5) * BOID_NOISE;
           boid.velocity.y += (Math.random() - 0.5) * BOID_NOISE;
           boid.velocity.z += (Math.random() - 0.5) * BOID_NOISE;
+
+          // Inverse-square pull toward the camera view point — only for birds outside
+          // the view frustum. Visible birds fly freely; off-screen birds drift back in.
+          _frustumPt.set(px, py, pz);
+          if (!_frustum.containsPoint(_frustumPt)) {
+            const vdx = _viewPX - px, vdy = _viewPY - py, vdz = _viewPZ - pz;
+            const vdSq = Math.max(vdx * vdx + vdy * vdy + vdz * vdz, 16);
+            const vdLen = Math.sqrt(vdSq);
+            const vf = (BOID_VIEW_W / vdSq) * boidScale;
+            boid.velocity.x += (vdx / vdLen) * vf;
+            boid.velocity.y += (vdy / vdLen) * vf;
+            boid.velocity.z += (vdz / vdLen) * vf;
+          }
 
           // Homing force — per-card ramp, uses pre-computed homeBase
           if (homeBase) {
@@ -783,9 +847,9 @@ export function CardSphere({
             boid.velocity.z += (homeBase.z - obj.position.z) * homeStrength;
           }
 
-          // Speed: full boid speed during transit, ease off in the final 8 units for smooth landing
-          const proximityFactor = isForming ? Math.min(distToHome / 8, 1) : 1;
-          const maxSpd = (BOID_SPEED + BOID_SPEED_VAR) * (isForming ? (0.3 + proximityFactor * 0.7) : 1);
+          // Speed: full forming speed during transit, ease off in the final 14 units for smooth landing
+          const proximityFactor = isForming ? Math.min(distToHome / 14, 1) : 1;
+          const maxSpd = (BOID_SPEED + BOID_SPEED_VAR) * (isForming ? (0.5 + proximityFactor * 1.5) : 1);
           const minSpd = Math.max(0.005, (BOID_SPEED - BOID_SPEED_VAR) * (isForming ? proximityFactor * 0.3 : 1));
           const spd    = boid.velocity.length();
           if (spd > maxSpd)                     boid.velocity.multiplyScalar(maxSpd / spd);
@@ -884,6 +948,7 @@ export function CardSphere({
             return;
           }
 
+          cardGroup.scale.set(1, 1, 1);
           const currentCardIndex = cardGroup.userData.cardIndex as number;
           const isAnimating = animatingCardIndicesRef.current.has(currentCardIndex);
           const hasBeenFlipped = flippedCardIndicesRef.current.has(currentCardIndex);

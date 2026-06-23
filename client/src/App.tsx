@@ -1,4 +1,5 @@
 import { Canvas } from "@/components/canvas/Canvas";
+import { BoidDebugPanel } from "@/components/dom/BoidDebugPanel";
 import { Interface } from "@/components/dom/Interface";
 import { Menu } from "@/components/dom/Menu";
 import { TrickControls } from "@/components/dom/TrickControls";
@@ -26,6 +27,7 @@ export default function App() {
       <Interface />
       <VRButton />
       {SHOW_DEBUG_UI && <Menu />}
+      {SHOW_DEBUG_UI && <BoidDebugPanel />}
 
       {/* Trick Controls - always visible for magician, otherwise gated by debug UI */}
       {(SHOW_DEBUG_UI || role === 'magician') && <TrickControls />}
