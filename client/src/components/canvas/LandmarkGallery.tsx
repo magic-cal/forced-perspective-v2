@@ -5,6 +5,7 @@ import { BackSide } from 'three';
 import { LANDMARKS } from '@/config/landmarks';
 import { useSocket } from '@/sockets/SocketProvider';
 
+
 /**
  * LandmarkGallery displays a sequence of panoramas (images/videos) inside a large sphere.
  * Controls (next/prev) are provided via socket for synchronizing between magician/spectator and audience.
@@ -13,10 +14,12 @@ export function LandmarkGallery({
   onFinish,
   indexEvent = 'landmark-index',
   finishEvent = 'landmark-finish',
+  showProgress = false,
 }: {
   onFinish?: () => void;
   indexEvent?: string;
   finishEvent?: string;
+  showProgress?: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const socket = useSocket();
@@ -136,7 +139,7 @@ export function LandmarkGallery({
         setTexture(createdTexture);
         try {
           if (prev && prev !== createdTexture) prev.dispose();
-        } catch (e) {}
+        } catch (e) { }
       };
       fallbackImg.onerror = () => {
         // Give up and clear texture (material will render fallback color)
@@ -183,7 +186,7 @@ export function LandmarkGallery({
           lastTextureRef.current.dispose();
           lastTextureRef.current = null;
         }
-      } catch (e) {}
+      } catch (e) { }
     };
   }, []);
 
@@ -220,8 +223,7 @@ export function LandmarkGallery({
             </div>
           )}
 
-          {/* Slide counter — visible to everyone */}
-          <div style={{
+          {showProgress && (<div style={{
             position: 'fixed',
             left: '50%',
             transform: 'translateX(-50%)',
@@ -232,7 +234,7 @@ export function LandmarkGallery({
             borderRadius: 8,
             fontWeight: 600,
             pointerEvents: 'none',
-          }}>{index + 1} / {LANDMARKS.length}</div>
+          }}>{index + 1} / {LANDMARKS.length}</div>)}
         </div>
       </Html>
     </group>
