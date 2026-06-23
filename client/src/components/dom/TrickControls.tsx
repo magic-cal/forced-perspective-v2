@@ -1,9 +1,6 @@
-import { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { useTrickStore } from '@/store/useTrickStore';
-import { TrickState } from '@/types/trick';
 import { useGameStore } from '@/store/gameStore';
-import { useSocket } from '@/sockets/SocketProvider';
+import { useShowFlow, TRICK_STEPS } from '@/hooks/useShowFlow';
 import { LANDMARKS } from '@/config/landmarks';
 
 const ControlsContainer = styled.div`
@@ -48,9 +45,9 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button<{ variant?: 'primary' | 'secondary' }>`
-  background: ${props => 
-    props.variant === 'secondary' 
-      ? 'rgba(255, 255, 255, 0.1)' 
+  background: ${props =>
+    props.variant === 'secondary'
+      ? 'rgba(255, 255, 255, 0.1)'
       : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
   border: none;
   border-radius: 8px;
@@ -65,9 +62,9 @@ const Button = styled.button<{ variant?: 'primary' | 'secondary' }>`
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    background: ${props => 
-      props.variant === 'secondary' 
-        ? 'rgba(255, 255, 255, 0.2)' 
+    background: ${props =>
+      props.variant === 'secondary'
+        ? 'rgba(255, 255, 255, 0.2)'
         : 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)'};
   }
 
@@ -89,7 +86,7 @@ const StateInfo = styled.div`
   line-height: 1.4;
 `;
 
-const STATE_DESCRIPTIONS: Record<TrickState, string> = {
+const STATE_DESCRIPTIONS: Record<string, string> = {
   'setup': 'Cards flying as flock. Press Next to form sphere.',
   'forming': 'Cards assembling into sphere. Press Next when sphere is formed.',
   'cards-flipping': 'Cards flipping to backs. Audience rotating. Animation in progress.',
@@ -99,7 +96,7 @@ const STATE_DESCRIPTIONS: Record<TrickState, string> = {
   'scatter': 'Cards scatter away. Selected card remains.',
 };
 
-const STATE_LABELS: Record<TrickState, string> = {
+const TRICK_STATE_LABELS: Record<string, string> = {
   'setup': 'Flock',
   'forming': 'Forming Sphere',
   'cards-flipping': 'Cards Flipping & Unlink',
@@ -110,161 +107,67 @@ const STATE_LABELS: Record<TrickState, string> = {
 };
 
 export function TrickControls() {
-  const { currentState, nextState, resetTrick, selectedCardId } = useTrickStore();
   const role = useGameStore((s) => s.role);
-  const socket = useSocket();
-  const [galleryActive, setGalleryActive] = useState(true);
-  const [galleryIndex, setGalleryIndex] = useState(0);
-  const [endGalleryActive, setEndGalleryActive] = useState(false);
-  const [endGalleryIndex, setEndGalleryIndex] = useState(0);
+  const {
+    handleNext, handleAction, handleGalleryToggle,
+    canNext, galleryEnabled, showPhase, galleryIndex,
+    currentState, selectedCardId,
+  } = useShowFlow();
 
-  // Re-enable gallery when the trick resets so the next run starts fresh
-  useEffect(() => {
-    if (currentState === 'setup') {
-      setGalleryActive(true);
-      setGalleryIndex(0);
-      setEndGalleryActive(false);
-      setEndGalleryIndex(0);
-    }
-  }, [currentState]);
+  if (role !== 'magician') return null;
 
-  const galleryPrev = () => {
-    const next = Math.max(0, galleryIndex - 1);
-    setGalleryIndex(next);
-    socket?.emit('landmark-index', { index: next, senderId: socket.id });
-  };
+  const phaseLabel = (() => {
+    if (showPhase === 'start-gallery') return `Opening Gallery — ${galleryIndex + 1} / ${LANDMARKS.length}`;
+    if (showPhase === 'end-gallery')   return `Closing Gallery — ${galleryIndex + 1} / ${LANDMARKS.length}`;
+    return 'Trick';
+  })();
 
-  const galleryNext = () => {
-    if (galleryIndex < LANDMARKS.length - 1) {
-      const next = galleryIndex + 1;
-      setGalleryIndex(next);
-      socket?.emit('landmark-index', { index: next, senderId: socket.id });
-    } else {
-      endGallery();
-    }
-  };
+  const stateLabel = showPhase === 'trick' ? TRICK_STATE_LABELS[currentState] ?? currentState : '';
+  const stateDescription = showPhase === 'trick' ? STATE_DESCRIPTIONS[currentState] : '';
 
-  const endGallery = () => {
-    setGalleryActive(false);
-    socket?.emit('landmark-finish', { senderId: socket.id });
-  };
-
-  const skipGallery = () => {
-    setGalleryActive(false);
-    socket?.emit('gallery-skip');
-  };
-
-  const startEndGallery = () => {
-    setEndGalleryActive(true);
-    socket?.emit('end-gallery-start');
-  };
-
-  const endGalleryPrev = () => {
-    const next = Math.max(0, endGalleryIndex - 1);
-    setEndGalleryIndex(next);
-    socket?.emit('end-landmark-index', { index: next, senderId: socket.id });
-  };
-
-  const endGalleryNext = () => {
-    if (endGalleryIndex < LANDMARKS.length - 1) {
-      const next = endGalleryIndex + 1;
-      setEndGalleryIndex(next);
-      socket?.emit('end-landmark-index', { index: next, senderId: socket.id });
-    } else {
-      finishEndGallery();
-    }
-  };
-
-  const finishEndGallery = () => {
-    setEndGalleryActive(false);
-    socket?.emit('end-landmark-finish', { senderId: socket.id });
-  };
-
-  const canProgress = () => {
-    if (currentState === 'scatter') return false;
-    if (currentState === 'participant-selection' && !selectedCardId) return false;
-    return true;
-  };
-
-  // Show controls for magician role
-  if (role !== 'magician') {
-    return null;
-  }
+  const nextLabel = (() => {
+    if (showPhase === 'start-gallery') return galleryIndex < LANDMARKS.length - 1 ? 'Next Image →' : 'Start Trick →';
+    if (showPhase === 'trick' && currentState === 'scatter') return galleryEnabled ? 'End Gallery →' : 'Complete';
+    if (showPhase === 'end-gallery') return galleryIndex < LANDMARKS.length - 1 ? 'Next Image →' : 'Done';
+    return 'Next →';
+  })();
 
   return (
     <ControlsContainer>
-      {/* Gallery controls — only shown while gallery is active */}
-      {galleryActive && (
-        <ControlPanel>
-          <StateDisplay>
-            Gallery
-            <StateName>{galleryIndex + 1} / {LANDMARKS.length}</StateName>
-          </StateDisplay>
-          <ButtonGroup>
-            <Button variant="secondary" onClick={galleryPrev} disabled={galleryIndex === 0}>← Prev</Button>
-            <Button onClick={galleryNext}>{galleryIndex < LANDMARKS.length - 1 ? 'Next →' : 'End Gallery'}</Button>
-          </ButtonGroup>
-          <ButtonGroup>
-            <Button variant="secondary" onClick={skipGallery}>Skip Gallery</Button>
-          </ButtonGroup>
-        </ControlPanel>
-      )}
-
-      {/* End gallery controls — shown while end gallery is active */}
-      {endGalleryActive && (
-        <ControlPanel>
-          <StateDisplay>
-            End Gallery
-            <StateName>{endGalleryIndex + 1} / {LANDMARKS.length}</StateName>
-          </StateDisplay>
-          <ButtonGroup>
-            <Button variant="secondary" onClick={endGalleryPrev} disabled={endGalleryIndex === 0}>← Prev</Button>
-            <Button onClick={endGalleryNext}>{endGalleryIndex < LANDMARKS.length - 1 ? 'Next →' : 'Finish'}</Button>
-          </ButtonGroup>
-        </ControlPanel>
-      )}
-
       <ControlPanel>
         <StateDisplay>
-          Current State
-          <StateName>{STATE_LABELS[currentState]}</StateName>
+          {phaseLabel}
+          {stateLabel && <StateName>{stateLabel}</StateName>}
         </StateDisplay>
-        
-        <StateInfo>{STATE_DESCRIPTIONS[currentState]}</StateInfo>
-        
+
+        {stateDescription && <StateInfo>{stateDescription}</StateInfo>}
+
         {currentState === 'participant-selection' && !selectedCardId && (
           <StateInfo style={{ color: '#ff9800', marginTop: '12px' }}>
             ⚠️ Waiting for participant to select a card
           </StateInfo>
         )}
-        
+
         {currentState === 'participant-selection' && selectedCardId && (
           <StateInfo style={{ color: '#4caf50', marginTop: '12px' }}>
             ✓ Card selected: {selectedCardId}
           </StateInfo>
         )}
-        
+
         <ButtonGroup>
-          <Button
-            onClick={nextState}
-            disabled={!canProgress()}
-            title={!canProgress() ? 'Cannot progress from current state' : 'Progress to next state'}
-          >
-            {currentState === 'scatter' ? 'Complete' : 'Next State'}
+          <Button onClick={handleNext} disabled={!canNext}>
+            {nextLabel}
           </Button>
-          <Button
-            variant="secondary"
-            onClick={resetTrick}
-            title="Reset trick to setup state"
-          >
+          <Button variant="secondary" onClick={() => handleAction('reset')}>
             Reset
           </Button>
         </ButtonGroup>
-        {currentState === 'scatter' && !endGalleryActive && (
-          <ButtonGroup>
-            <Button onClick={startEndGallery}>Show End Gallery</Button>
-          </ButtonGroup>
-        )}
+
+        <ButtonGroup>
+          <Button variant="secondary" onClick={handleGalleryToggle}>
+            Gallery: {galleryEnabled ? 'On' : 'Off'}
+          </Button>
+        </ButtonGroup>
       </ControlPanel>
     </ControlsContainer>
   );

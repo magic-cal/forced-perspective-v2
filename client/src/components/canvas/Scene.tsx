@@ -5,8 +5,6 @@ import { useXR } from "@react-three/xr";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { debug, SHOW_DEBUG_UI } from "@/config/debug";
-import PanoramaViewer from "../PanoramaViewer";
-import { CardDeck } from "./CardDeck";
 import { CardSphere } from "./CardSphere";
 import LandmarkGallery from './LandmarkGallery';
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
@@ -19,6 +17,7 @@ import { useCameraUnlink } from "@/hooks/useCameraUnlink";
 import { useGameStore } from "@/store/gameStore";
 import { useSocket } from "@/sockets/SocketProvider";
 import { useTrickStore } from "@/store/useTrickStore";
+import { useShowFlowStore } from "@/store/useShowFlowStore";
 import { TRICK_CONFIG } from "@/config/trick";
 import { easeInOutCubic } from "@/utils/easing";
 
@@ -33,9 +32,8 @@ const _liveTargetQuat = new THREE.Quaternion();
 
 export function Scene() {
   const { camera, gl, scene } = useThree();
-  const [isSpread, setIsSpread] = useState(false);
-  const skipGallery = new URLSearchParams(window.location.search).get('gallery') === '0';
-  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck" | "end-landmarks">(skipGallery ? "cards" : "landmarks");
+  const showPhase = useShowFlowStore((s) => s.showPhase);
+  const galleryEnabled = useShowFlowStore((s) => s.galleryEnabled);
   const lastBroadcastQuatRef = useRef({ x: 0, y: 0, z: 0, w: 1 });
   const [pointerHitPos, setPointerHitPos] = useState<THREE.Vector3 | null>(null);
   const lastPointerEmitRef = useRef(0);
@@ -123,8 +121,8 @@ export function Scene() {
       // Reset interpolation
       resetInterpolation();
 
-      // Return to gallery (or cards if gallery was disabled via URL param)
-      setCurrentScene(skipGallery ? 'cards' : 'landmarks');
+      // Return to the appropriate phase for the next run
+      useShowFlowStore.getState().reset();
 
       // Reset headset indicator + audience camera target rotations
       headsetIndicatorQuatRef.current.identity();
@@ -162,7 +160,7 @@ export function Scene() {
         }, 100);
       }
     }
-  }, [currentState, viewType, resetUnlinkState, resetInterpolation, camera, forceBroadcast, skipGallery]);
+  }, [currentState, viewType, resetUnlinkState, resetInterpolation, camera, forceBroadcast]);
   
   useFrame((state, _delta, frame) => {
     if (!socket || viewType !== 'participant') return;
@@ -285,20 +283,20 @@ export function Scene() {
     }
   });
 
-  // Magician can force-skip the gallery on all clients
+  // Audience/spectator: respond to scene-switching events from the magician
   useEffect(() => {
     if (!socket) return undefined;
-    const handle = () => setCurrentScene('cards');
-    socket.on('gallery-skip', handle);
-    return () => { socket.off('gallery-skip', handle); };
-  }, [socket]);
-
-  // Magician can trigger the end gallery on all clients after the trick
-  useEffect(() => {
-    if (!socket) return undefined;
-    const handle = () => setCurrentScene('end-landmarks');
-    socket.on('end-gallery-start', handle);
-    return () => { socket.off('end-gallery-start', handle); };
+    const handleGallerySkip = () => useShowFlowStore.getState().setShowPhase('trick');
+    const handleEndGalleryStart = () => useShowFlowStore.getState().setShowPhase('end-gallery');
+    const handleTrickReset = () => useShowFlowStore.getState().reset();
+    socket.on('gallery-skip', handleGallerySkip);
+    socket.on('end-gallery-start', handleEndGalleryStart);
+    socket.on('trick-reset', handleTrickReset);
+    return () => {
+      socket.off('gallery-skip', handleGallerySkip);
+      socket.off('end-gallery-start', handleEndGalleryStart);
+      socket.off('trick-reset', handleTrickReset);
+    };
   }, [socket]);
 
   // Clear pointer when leaving selection state
@@ -337,28 +335,10 @@ export function Scene() {
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
   }, [gl]);
 
-  const handleDeckClick = () => {
-    setIsSpread(!isSpread);
-  };
-
-  // Keyboard / pointer handler to progress the landmarks gallery or move to cards
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'n') {
-        // Next: if in landmarks, move to cards when done
-        if (currentScene === 'landmarks') {
-          setCurrentScene('card-deck');
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [currentScene]);
-
   return (
     <>
       <Preload all />
-      {currentScene === "landmarks" ? null : (
+      {showPhase === 'trick' && (
         <Environment preset="sunset" intensity={1} blur={0.65} />
       )}
       {!isPresenting && (
@@ -376,9 +356,14 @@ export function Scene() {
       )}
       <DeviceOrientationControls enabled={isDeviceMovementEnabled && !isPresenting} />
 
-      {currentScene === "card-deck" ? (
-        <CardDeck isSpread={isSpread} onDeckClick={handleDeckClick} />
-      ) : currentScene === "cards" ? (
+      {showPhase === 'start-gallery' && galleryEnabled ? (
+        <LandmarkGallery onFinish={() => useShowFlowStore.getState().setShowPhase('trick')} />
+      ) : showPhase === 'end-gallery' && galleryEnabled ? (
+        <LandmarkGallery
+          indexEvent="end-landmark-index"
+          finishEvent="end-landmark-finish"
+        />
+      ) : (
         <CardSphere
           radius={15}
           maxCardsPerRow={48}
@@ -388,15 +373,6 @@ export function Scene() {
           selectedCardId={selectedCardId}
           onPointerHit={viewType === 'participant' ? handlePointerHit : undefined}
         />
-      ) : currentScene === 'landmarks' ? (
-        <LandmarkGallery onFinish={() => setCurrentScene('cards')} />
-      ) : currentScene === 'end-landmarks' ? (
-        <LandmarkGallery
-          indexEvent="end-landmark-index"
-          finishEvent="end-landmark-finish"
-        />
-      ) : (
-        <PanoramaViewer />
       )}
       
       {/* Pointer hit indicator - visible to both roles during card selection */}
@@ -417,18 +393,6 @@ export function Scene() {
         <XRDebug quaternionRef={headsetIndicatorQuatRef} />
       )}
 
-      {/* Scene switcher button */}
-      {/* <mesh
-        position={[0, -10, 0]}
-        onClick={() =>
-          setCurrentScene(currentScene === "cards" ? "landmarks" : "cards")
-        }
-      >
-        <boxGeometry args={[2, 0.5, 0.5]} />
-        <meshStandardMaterial
-          color={currentScene === "cards" ? "#ff4444" : "#44ff44"}
-        />
-      </mesh> */}
     </>
   );
 }
