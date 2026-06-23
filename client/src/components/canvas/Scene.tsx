@@ -16,6 +16,7 @@ import { XRDebug } from "./XRDebug";
 import { PointerIndicator } from "./PointerIndicator";
 import { useCameraSync } from "@/hooks/useCameraSync";
 import { useCameraUnlink } from "@/hooks/useCameraUnlink";
+import { useAudioManager } from "@/hooks/useAudioManager";
 import { useGameStore } from "@/store/gameStore";
 import { useSocket } from "@/sockets/SocketProvider";
 import { useTrickStore } from "@/store/useTrickStore";
@@ -66,6 +67,8 @@ export function Scene() {
   const role = useGameStore((s) => s.role);
   const socket = useSocket();
   const currentState = useTrickStore((s) => s.currentState);
+
+  useAudioManager();
   const isUnlinked = useTrickStore((s) => s.isUnlinked);
   const selectedCardId = useTrickStore((s) => s.selectedCardId);
   
