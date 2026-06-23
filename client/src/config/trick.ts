@@ -47,5 +47,9 @@ export const TRICK_CONFIG = {
       },
       staggerDelayMs: 60,
     },
+    // XR-specific settings — applied automatically when Quest/headset is presenting
+    xr: {
+      boidFrameSkip: 2,     // run boid simulation every N frames
+    },
   },
 } as const;

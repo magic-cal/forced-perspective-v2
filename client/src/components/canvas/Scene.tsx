@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { debug, SHOW_DEBUG_UI } from "@/config/debug";
 import { CardSphere } from "./CardSphere";
 import LandmarkGallery from './LandmarkGallery';
+import { LandingScene } from './LandingScene';
 import { DeviceOrientationControls } from "./DeviceOrientationControls";
 import { Environment } from "./Environment";
 import { HeadsetIndicator } from "./HeadsetIndicator";
@@ -338,9 +339,7 @@ export function Scene() {
   return (
     <>
       <Preload all />
-      {(showPhase === 'trick' || showPhase === 'landing') && (
-        <Environment preset="sunset" intensity={1} blur={0.65} />
-      )}
+      <Environment preset="sunset" intensity={1} blur={0.65} />
       {!isPresenting && (
         <OrbitControls
           makeDefault
@@ -373,6 +372,8 @@ export function Scene() {
           selectedCardId={selectedCardId}
           onPointerHit={viewType === 'participant' ? handlePointerHit : undefined}
         />
+      ) : showPhase === 'landing' ? (
+        <LandingScene />
       ) : null}
       
       {/* Pointer hit indicator - visible to both roles during card selection */}

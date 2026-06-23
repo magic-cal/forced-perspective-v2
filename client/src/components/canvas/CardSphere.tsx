@@ -1,6 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useRef, useMemo, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
+import { useXR } from "@react-three/xr";
 import { Card } from "./Card";
 import { CARD_DIMENSIONS, CARD_SUITS, CARD_VALUES, ViewType, ForcedValue } from "./Card/types";
 import { TrickState } from "@/types/trick";
@@ -45,15 +46,15 @@ const _animResult = { positionOffset: _posOffset, rotationProgress: 0, isComplet
 const _scatterTarget = new THREE.Vector3();
 
 // Boid orientation scratch objects (reused every frame to avoid allocations)
-const _boidFwd   = new THREE.Vector3();
+const _boidFwd = new THREE.Vector3();
 const _boidRight = new THREE.Vector3();
-const _boidFace  = new THREE.Vector3();
-const _boidUp    = new THREE.Vector3();
-const _boidMat4  = new THREE.Matrix4();
+const _boidFace = new THREE.Vector3();
+const _boidUp = new THREE.Vector3();
+const _boidMat4 = new THREE.Matrix4();
 let _viewPX = 0, _viewPY = 0, _viewPZ = 0; // camera view attraction point, updated each frame
-const _frustum    = new THREE.Frustum();
+const _frustum = new THREE.Frustum();
 const _frustumMat = new THREE.Matrix4();
-const _frustumPt  = new THREE.Vector3();
+const _frustumPt = new THREE.Vector3();
 
 const SCATTER_DISTANCE = 350;
 const SCATTER_DURATION = 3000;
@@ -66,23 +67,23 @@ interface ScatterEntry {
 }
 
 // Non-tunable boid constants
-const BOID_SPEED_VAR     = 0.05;
-const BOID_SEP_DIST_SQ   = 30;
+const BOID_SPEED_VAR = 0.05;
+const BOID_SEP_DIST_SQ = 30;
 const BOID_ALIGN_DIST_SQ = 400;
-const BOID_BOUNDS_MIN    = 55;
-const BOID_BOUNDS_MAX    = 82;
-const FORMING_DURATION   = 5000;
+const BOID_BOUNDS_MIN = 55;
+const BOID_BOUNDS_MAX = 82;
+const FORMING_DURATION = 5000;
 
 // Tunable boid config — mutated directly by BoidDebugPanel sliders each frame
 export const boidConfig = {
-  BOID_SPEED:      0.22,   // cruise speed (units/frame at 60 fps)
-  BOID_SEP_W:      0.07,   // separation weight
-  BOID_ALIGN_W:    0.01,   // alignment weight
-  BOID_BOUNDS_W:   0.05,   // shell boundary steering weight
-  BOID_NOISE:      0.002,  // random nudge per frame
-  BOID_VIEW_W:     4,      // inverse-square pull toward camera view point
+  BOID_SPEED: 0.22,   // cruise speed (units/frame at 60 fps)
+  BOID_SEP_W: 0.07,   // separation weight
+  BOID_ALIGN_W: 0.01,   // alignment weight
+  BOID_BOUNDS_W: 0.05,   // shell boundary steering weight
+  BOID_NOISE: 0.002,  // random nudge per frame
+  BOID_VIEW_W: 4,      // inverse-square pull toward camera view point
   BOID_CARD_SCALE: 0.7,    // visual scale during murmuration
-  ORIENT_LERP:     0.05,   // orientation slerp fraction per frame
+  ORIENT_LERP: 0.05,   // orientation slerp fraction per frame
 };
 
 // Pre-allocated arrays for boid position snapshot (avoids per-frame allocations)
@@ -91,13 +92,13 @@ const _boidPosArr = new Float32Array(MAX_BOID_CARDS * 3);
 const _boidIdxArr = new Int32Array(MAX_BOID_CARDS);
 const _boidGroupArr: (THREE.Object3D | null)[] = new Array(MAX_BOID_CARDS).fill(null);
 const _boidVelArr = new Float32Array(MAX_BOID_CARDS * 3); // velocity snapshot for alignment rule
-const _airplaneQ  = new THREE.Quaternion();                // scratch for orientation blending
+const _airplaneQ = new THREE.Quaternion();                // scratch for orientation blending
 
 interface BoidData { velocity: THREE.Vector3 }
 
 export function CardSphere({
   radius = 15,
-  maxCardsPerRow = 48,
+  maxCardsPerRow = 12,
   rotationSpeed = 0.02,
   viewType = 'participant',
   trickState = 'setup',
@@ -105,12 +106,14 @@ export function CardSphere({
   onPointerHit,
 }: CardSphereProps) {
   // Apply performance mode settings
-  const effectiveRotationSpeed = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
-    ? TRICK_CONFIG.PERFORMANCE.lowPerf.rotationSpeed 
+  const effectiveRotationSpeed = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode
+    ? TRICK_CONFIG.PERFORMANCE.lowPerf.rotationSpeed
     : rotationSpeed;
-  const effectiveMaxCardsPerRow = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
-    ? TRICK_CONFIG.PERFORMANCE.lowPerf.maxCardsPerRow 
+  const effectiveMaxCardsPerRow = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode
+    ? TRICK_CONFIG.PERFORMANCE.lowPerf.maxCardsPerRow
     : maxCardsPerRow;
+  const isPresenting = useXR((s) => s.isPresenting);
+  const boidFrameSkip = isPresenting ? TRICK_CONFIG.PERFORMANCE.xr.boidFrameSkip : 1;
   const sphereRef = useRef<THREE.Group>(null);
   const _worldPosRef = useRef(new THREE.Vector3());
   const flippedCardIndicesRef = useRef<Set<number>>(new Set());
@@ -135,6 +138,7 @@ export function CardSphere({
   const formingAdvancedRef = useRef(false);
   const formingTargetQuaternionsRef = useRef<Map<number, THREE.Quaternion>>(new Map());
   const formingStaggerRef = useRef<Map<number, number>>(new Map());
+  const frameCountRef = useRef(0);
 
   // Create and shuffle a deck of all possible cards
   const shuffledDeck = useMemo(() => {
@@ -146,27 +150,27 @@ export function CardSphere({
     }
     return deterministicShuffleArray(deck, 111111);
   }, []);
-  
+
   // Start flip animation with staggered delays
   const startFlipAnimation = () => {
-    const staggerDelay = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode 
-      ? TRICK_CONFIG.PERFORMANCE.lowPerf.staggerDelayMs 
+    const staggerDelay = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode
+      ? TRICK_CONFIG.PERFORMANCE.lowPerf.staggerDelayMs
       : TRICK_CONFIG.CARD_FLIP.staggerDelayMs;
-    
+
     const newAnimatingCards = new Map<number, { startTime: number; progress: number }>();
     const currentTime = Date.now();
-    
+
     for (let i = 0; i < totalCardCountRef.current; i++) {
       newAnimatingCards.set(i, {
         startTime: currentTime + (i * staggerDelay),
         progress: 0,
       });
     }
-    
+
     animatingCardIndicesRef.current = newAnimatingCards;
     animationStartTimeRef.current = currentTime;
   };
-  
+
   // Trigger flip animation when entering cards-flipping state
   useEffect(() => {
     if (trickState === 'cards-flipping' && animatingCardIndicesRef.current.size === 0 && totalCardCountRef.current > 0) {
@@ -187,7 +191,7 @@ export function CardSphere({
       startFlipAnimation();
     }
   }, [trickState, viewType]);
-  
+
   // Freeze card rotations and clear animations for audience when entering cards-flipping
   useEffect(() => {
     if (trickState === 'cards-flipping' && viewType === 'audience') {
@@ -206,7 +210,7 @@ export function CardSphere({
       animationStartTimeRef.current = null;
     }
   }, [trickState, viewType]);
-  
+
   // Reset all card animation state when returning to setup
   useEffect(() => {
     if (trickState === 'setup') {
@@ -238,9 +242,17 @@ export function CardSphere({
     }
   }, [trickState]);
 
-  // Initialise boid simulation when entering setup
+  // Initialise boid simulation when entering setup.
+  // Also runs when joining mid-forming with no prior data (page refresh during show):
+  // in that case cards are placed at their sphere slot positions so the forming
+  // animation starts from a sensible location rather than the origin.
+  // This effect is declared BEFORE the forming effect so it runs first when both
+  // are triggered by the same trickState change, guaranteeing boidDataRef is
+  // populated before forming captures start positions.
   useEffect(() => {
-    if (trickState !== 'setup' || !sphereRef.current) return;
+    const isSetup = trickState === 'setup';
+    const isLateJoinForming = trickState === 'forming' && boidDataRef.current.size === 0;
+    if ((!isSetup && !isLateJoinForming) || !sphereRef.current) return;
 
     const boidData = new Map<number, BoidData>();
 
@@ -248,15 +260,22 @@ export function CardSphere({
       row.children.forEach((cardGroup) => {
         const idx = cardGroup.userData.cardIndex as number;
 
-        // Spawn within the annular shell so cards start in the visible zone
-        const phi = Math.acos(1 - 2 * Math.random());
-        const theta = Math.random() * Math.PI * 2;
-        const r = BOID_BOUNDS_MIN + 2 + Math.random() * (BOID_BOUNDS_MAX - BOID_BOUNDS_MIN - 4);
-        cardGroup.position.set(
-          r * Math.sin(phi) * Math.cos(theta),
-          r * Math.cos(phi),
-          r * Math.sin(phi) * Math.sin(theta),
-        );
+        if (isSetup) {
+          // Spawn within the annular shell so cards start in the visible zone
+          const phi = Math.acos(1 - 2 * Math.random());
+          const theta = Math.random() * Math.PI * 2;
+          const r = BOID_BOUNDS_MIN + 2 + Math.random() * (BOID_BOUNDS_MAX - BOID_BOUNDS_MIN - 4);
+          cardGroup.position.set(
+            r * Math.sin(phi) * Math.cos(theta),
+            r * Math.cos(phi),
+            r * Math.sin(phi) * Math.sin(theta),
+          );
+        } else {
+          // Late-join during forming: snap to sphere slot so forming captures a valid
+          // start position rather than the default (0, 0, 0)
+          const base = cardGroup.userData.basePosition as THREE.Vector3 | undefined;
+          if (base) cardGroup.position.copy(base);
+        }
         cardGroup.scale.setScalar(boidConfig.BOID_CARD_SCALE);
 
         // Random initial velocity near cruise speed
@@ -315,7 +334,7 @@ export function CardSphere({
         stagger.set(idx, Math.random() * FORMING_DURATION * 0.25);
         const basePos = cardGroup.userData.basePosition as THREE.Vector3;
         const savedPos = cardGroup.position.clone();
-        const savedQ   = cardGroup.quaternion.clone();
+        const savedQ = cardGroup.quaternion.clone();
         if (basePos) cardGroup.position.copy(basePos);
         (cardGroup as THREE.Object3D).lookAt(_CENTER);
         targetQuaternions.set(idx, cardGroup.quaternion.clone());
@@ -326,14 +345,14 @@ export function CardSphere({
     formingTargetQuaternionsRef.current = targetQuaternions;
     formingStaggerRef.current = stagger;
   }, [trickState]);
-  
+
   // Helper function to start sphere alignment animation
   const startSphereAlignment = useCallback((cardId: string) => {
     if (!sphereRef.current) return;
-    
+
     // Find the selected card's position in world space
     let selectedCardGroup: THREE.Object3D | null = null;
-    
+
     sphereRef.current.children.forEach((_row) => {
       _row.children.forEach((cardGroup) => {
         const cardComponent = cardGroup.children[0] as THREE.Group;
@@ -343,22 +362,22 @@ export function CardSphere({
         }
       });
     });
-    
+
     if (selectedCardGroup) {
       // Get the card's world position
       const cardWorldPos = new THREE.Vector3();
       (selectedCardGroup as THREE.Object3D).getWorldPosition(cardWorldPos);
-      
+
       // Calculate the angle needed to rotate the sphere to bring the card in front
       const angleToCard = Math.atan2(cardWorldPos.x, cardWorldPos.z);
-      
+
       // We want the opposite side (180 degrees away)
       let targetAngle = -angleToCard + Math.PI;
-      
+
       // Normalize the angle to [-PI, PI] range to ensure shortest path
       while (targetAngle > Math.PI) targetAngle -= 2 * Math.PI;
       while (targetAngle < -Math.PI) targetAngle += 2 * Math.PI;
-      
+
       targetSphereRotationRef.current = targetAngle;
 
       // Capture current row rotation speeds
@@ -368,11 +387,11 @@ export function CardSphere({
         speeds.set(index, effectiveRotationSpeed * direction);
       });
       rowRotationSpeedsRef.current = speeds;
-      
+
       sphereAlignmentStartRef.current = Date.now();
     }
   }, [effectiveRotationSpeed]);
-  
+
   // Snap sphere rotation for late-joining clients that missed the alignment animation
   useEffect(() => {
     if (!sphereRef.current || sphereRotationFromSession === 0) return;
@@ -388,18 +407,47 @@ export function CardSphere({
       startSphereAlignment(selectedCardId);
     }
   }, [selectedCardId, trickState, startSphereAlignment]);
-  
-  // When entering sphere-aligned: lock selection, reveal forced card value, restart sphere
-  // alignment timer so the animation plays fresh regardless of how long the operator waited
+
+  // When entering sphere-aligned: lock selection and restart the alignment timer.
+  // Forced card value is NOT revealed here — it stays hidden until final-flip.
   useEffect(() => {
     if (trickState === 'sphere-aligned' && selectedCardId) {
       if (viewType === 'participant') {
         lockSelection();
       }
-      setForcedCardValue(FORCED_CARD);
       sphereAlignmentStartRef.current = Date.now();
     }
   }, [trickState, selectedCardId, lockSelection, viewType]);
+
+  // Spectator only: flip the selected card face-down when sphere-aligned, so it's
+  // ready to flip back face-up (revealing the forced card) during final-flip.
+  // Delayed until the sphere alignment animation completes so the flip starts on a
+  // settled sphere rather than mid-rotation.
+  useEffect(() => {
+    if (trickState !== 'sphere-aligned' || viewType !== 'participant' || !selectedCardId || !sphereRef.current) return;
+
+    let selectedIndex = -1;
+    sphereRef.current.children.forEach((row) => {
+      row.children.forEach((cardGroup) => {
+        const cardComp = cardGroup.children[0] as THREE.Group;
+        if ((cardComp?.userData?.id as string) === selectedCardId) {
+          selectedIndex = cardGroup.userData.cardIndex as number;
+        }
+      });
+    });
+    if (selectedIndex === -1) return;
+
+    const delay = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
+    animatingCardIndicesRef.current = new Map([[selectedIndex, { startTime: Date.now() + delay, progress: 0 }]]);
+  }, [trickState, viewType, selectedCardId]);
+
+  // Reveal forced card value when entering final-flip so the card shows its true
+  // face as it animates from face-down to face-up during the reveal.
+  useEffect(() => {
+    if (trickState === 'final-flip') {
+      setForcedCardValue(FORCED_CARD);
+    }
+  }, [trickState]);
 
   // Initialize scatter animation when entering scatter state
   useEffect(() => {
@@ -470,7 +518,7 @@ export function CardSphere({
   const handleCardClick = useCallback((cardId: string, cardSuit: string, cardValue: string) => {
     setSelectedCard(cardId);
     socket?.emit('card-selected', { cardId, suit: cardSuit, value: cardValue, timestamp: Date.now() });
-    setLegacySelectedCard({ id: cardId, suit: cardSuit as any, value: cardValue as any, position: [0,0,0], rotation: [0,0,0], isFlipped: false, isSelected: true });
+    setLegacySelectedCard({ id: cardId, suit: cardSuit as any, value: cardValue as any, position: [0, 0, 0], rotation: [0, 0, 0], isFlipped: false, isSelected: true });
   }, [socket, setSelectedCard, setLegacySelectedCard]);
 
   // Generate cards — memoised so the JSX array is only rebuilt when trick state,
@@ -544,7 +592,7 @@ export function CardSphere({
     }
     totalCardCountRef.current = cardIndex;
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuffledDeck, effectiveMaxCardsPerRow, radius, trickState, viewType, selectedCardId, forcedCardValue, handleCardClick]);
 
   // Helper function to calculate inward-facing orientation (face visible from center)
@@ -618,467 +666,469 @@ export function CardSphere({
       if (sphereRef.current) {
         const currentTime = Date.now();
         let completedCount = 0;
-        
+
         const isAligning = trickState === 'sphere-aligned' && sphereAlignmentStartRef.current !== null && targetSphereRotationRef.current !== null;
 
-      // Stop row rotation during boids/forming and all post-selection states
-      const shouldStopRotation = trickState === 'setup'
-        || trickState === 'participant-selection'
-        || trickState === 'sphere-aligned'
-        || trickState === 'final-flip'
-        || trickState === 'scatter';
+        // Stop row rotation during boids/forming and all post-selection states
+        const shouldStopRotation = trickState === 'setup'
+          || trickState === 'participant-selection'
+          || trickState === 'sphere-aligned'
+          || trickState === 'final-flip'
+          || trickState === 'scatter';
 
-      if (isAligning && sphereAlignmentStartRef.current) {
-        const elapsed = currentTime - sphereAlignmentStartRef.current;
-        const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
-        const totalDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
+        if (isAligning && sphereAlignmentStartRef.current) {
+          const elapsed = currentTime - sphereAlignmentStartRef.current;
+          const slowdownDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.rotationSlowdownDuration;
+          const totalDuration = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
 
-        // Phase 1: Slow down row rotations (first half of animation)
-        if (elapsed < slowdownDuration) {
-          const slowdownProgress = elapsed / slowdownDuration;
-          const slowdownFactor = 1 - easeInOutQuad(slowdownProgress);
+          // Phase 1: Slow down row rotations (first half of animation)
+          if (elapsed < slowdownDuration) {
+            const slowdownProgress = elapsed / slowdownDuration;
+            const slowdownFactor = 1 - easeInOutQuad(slowdownProgress);
 
-          sphereRef.current.children.forEach((row, index) => {
-            const baseSpeed = rowRotationSpeedsRef.current.get(index) || 0;
-            row.rotation.y += baseSpeed * slowdownFactor * delta;
-          });
-        }
+            sphereRef.current.children.forEach((row, index) => {
+              const baseSpeed = rowRotationSpeedsRef.current.get(index) || 0;
+              row.rotation.y += baseSpeed * slowdownFactor * delta;
+            });
+          }
 
-        // Phase 2: Rotate entire sphere to align card (throughout animation)
-        const alignProgress = Math.min(elapsed / totalDuration, 1.0);
-        const easedAlignProgress = easeInOutQuad(alignProgress);
+          // Phase 2: Rotate entire sphere to align card (throughout animation)
+          const alignProgress = Math.min(elapsed / totalDuration, 1.0);
+          const easedAlignProgress = easeInOutQuad(alignProgress);
 
-        // Interpolate sphere rotation
-        sphereRef.current.rotation.y = (targetSphereRotationRef.current ?? 0) * easedAlignProgress;
+          // Interpolate sphere rotation
+          sphereRef.current.rotation.y = (targetSphereRotationRef.current ?? 0) * easedAlignProgress;
 
-        // Complete animation — sphere is now aligned; broadcast final angle for late-joiners
-        if (alignProgress >= 1.0) {
-          sphereAlignmentStartRef.current = null;
-          if (viewType === 'participant' && !hasSphereRotationEmittedRef.current) {
-            hasSphereRotationEmittedRef.current = true;
-            socket?.emit('sphere-rotation-settled', { rotation: sphereRef.current.rotation.y });
+          // Complete animation — sphere is now aligned; broadcast final angle for late-joiners
+          if (alignProgress >= 1.0) {
+            sphereAlignmentStartRef.current = null;
+            if (viewType === 'participant' && !hasSphereRotationEmittedRef.current) {
+              hasSphereRotationEmittedRef.current = true;
+              socket?.emit('sphere-rotation-settled', { rotation: sphereRef.current.rotation.y });
+            }
+          }
+        } else if (!isAligning) {
+          // Epoch-based row rotation: computed from a shared session clock so any client
+          // that joins late snaps to the correct angle immediately, without needing to
+          // have been running since t=0.
+          const { sessionStartTime, rotationStopTime } = useSessionStore.getState();
+          const effectiveNow = rotationStopTime ? Math.min(currentTime, rotationStopTime) : currentTime;
+          const elapsedSeconds = (effectiveNow - sessionStartTime) / 1000;
+
+          if (!shouldStopRotation || rotationStopTime !== null) {
+            sphereRef.current.children.forEach((row, index) => {
+              const direction = index % 2 === 0 ? 1 : -1;
+              row.rotation.y = effectiveRotationSpeed * direction * elapsedSeconds;
+            });
           }
         }
-      } else if (!isAligning) {
-        // Epoch-based row rotation: computed from a shared session clock so any client
-        // that joins late snaps to the correct angle immediately, without needing to
-        // have been running since t=0.
-        const { sessionStartTime, rotationStopTime } = useSessionStore.getState();
-        const effectiveNow = rotationStopTime ? Math.min(currentTime, rotationStopTime) : currentTime;
-        const elapsedSeconds = (effectiveNow - sessionStartTime) / 1000;
 
-        if (!shouldStopRotation || rotationStopTime !== null) {
-          sphereRef.current.children.forEach((row, index) => {
-            const direction = index % 2 === 0 ? 1 : -1;
-            row.rotation.y = effectiveRotationSpeed * direction * elapsedSeconds;
+        // BOID + FORMING: murmuration simulation (separation + alignment + cohesion)
+        // with an optional homing force that ramps up during 'forming' to pull each
+        // card to its sphere slot while it continues flying like a bird.
+        if (trickState === 'setup' || trickState === 'forming') {
+          frameCountRef.current++;
+          if (frameCountRef.current % boidFrameSkip !== 0) return;
+          // --- snapshot positions + velocities ---
+          let boidCount = 0;
+          sphereRef.current.children.forEach((row) => {
+            row.children.forEach((cardGroup) => {
+              const boid = boidDataRef.current.get(cardGroup.userData.cardIndex as number);
+              if (!boid) return;
+              const b3 = boidCount * 3;
+              _boidPosArr[b3] = cardGroup.position.x;
+              _boidPosArr[b3 + 1] = cardGroup.position.y;
+              _boidPosArr[b3 + 2] = cardGroup.position.z;
+              _boidVelArr[b3] = boid.velocity.x;
+              _boidVelArr[b3 + 1] = boid.velocity.y;
+              _boidVelArr[b3 + 2] = boid.velocity.z;
+              _boidIdxArr[boidCount] = cardGroup.userData.cardIndex as number;
+              _boidGroupArr[boidCount] = cardGroup as THREE.Object3D;
+              boidCount++;
+            });
           });
+
+          const isForming = trickState === 'forming' && formingStartTimeRef.current !== null;
+          const formingElapsed = isForming ? (currentTime - formingStartTimeRef.current!) : 0;
+
+          // Read tunable config once per frame so slider changes take effect immediately
+          const { BOID_SEP_W, BOID_ALIGN_W, BOID_BOUNDS_W, BOID_NOISE, BOID_VIEW_W, BOID_SPEED, BOID_CARD_SCALE, ORIENT_LERP } = boidConfig;
+
+          // Update frustum once per frame for view-attraction culling
+          _frustumMat.multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse);
+          _frustum.setFromProjectionMatrix(_frustumMat);
+
+          // Camera view attraction point — shoot a ray from the camera forward and find
+          // where it hits the shell midpoint sphere. Both the spectator (at origin) and
+          // the audience (inside shell, looking through the sphere) are inside the shell,
+          // so this always resolves to a positive-t intersection in front of the camera.
+          {
+            const me = state.camera.matrixWorld.elements;
+            const cfx = -me[8], cfy = -me[9], cfz = -me[10]; // camera -Z = world forward
+            const cpx = state.camera.position.x, cpy = state.camera.position.y, cpz = state.camera.position.z;
+            const shellMid = (BOID_BOUNDS_MIN + BOID_BOUNDS_MAX) * 0.5;
+            const pDotD = cpx * cfx + cpy * cfy + cpz * cfz;
+            const disc = pDotD * pDotD - (cpx * cpx + cpy * cpy + cpz * cpz - shellMid * shellMid);
+            const t = disc >= 0 ? -pDotD + Math.sqrt(disc) : shellMid;
+            _viewPX = cpx + cfx * t;
+            _viewPY = cpy + cfy * t;
+            _viewPZ = cpz + cfz * t;
+          }
+
+          // --- per-boid forces ---
+          for (let i = 0; i < boidCount; i++) {
+            const boid = boidDataRef.current.get(_boidIdxArr[i]);
+            if (!boid) continue;
+
+            const obj = _boidGroupArr[i]!;
+            const i3 = i * 3;
+            const px = _boidPosArr[i3], py = _boidPosArr[i3 + 1], pz = _boidPosArr[i3 + 2];
+
+            // Per-card staggered forming progress — each card has its own random delay offset
+            const cardDelay = isForming ? (formingStaggerRef.current.get(_boidIdxArr[i]) ?? 0) : 0;
+            const cardElapsed = isForming ? Math.max(0, formingElapsed - cardDelay) : 0;
+            const cardProgress = isForming ? Math.min(cardElapsed / (FORMING_DURATION * 0.55), 1.0) : 0;
+            const cardEased = easeInOutCubic(cardProgress);
+            // Boid forces scale to zero as card homes in so homing force dominates
+            const boidScale = isForming ? Math.max(0.0, 1 - cardEased * 0.9) : 1.0;
+
+            // Pre-compute distance to sphere slot (used for final approach and speed tuning)
+            const homeBase = isForming && cardEased > 0.05 ? (obj.userData.basePosition as THREE.Vector3) : null;
+            const distToHome = homeBase ? obj.position.distanceTo(homeBase) : Infinity;
+
+            // Smooth final approach — within 2 units, lerp directly to avoid visible pop.
+            // Scale grows back to full size as the card settles into its slot.
+            if (homeBase && distToHome < 2.0) {
+              boid.velocity.set(0, 0, 0);
+              const approachT = 1.0 - distToHome / 2.0;
+              obj.scale.setScalar(BOID_CARD_SCALE + (1 - BOID_CARD_SCALE) * approachT);
+              obj.position.lerp(homeBase, 0.15);
+              const tQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
+              if (tQ) obj.quaternion.slerp(tQ, 0.2);
+              if (distToHome < 0.05) {
+                obj.position.copy(homeBase);
+                obj.scale.setScalar(1.0);
+                if (tQ) obj.quaternion.copy(tQ);
+              }
+              continue;
+            }
+
+            // Still flying — keep bird scale
+            obj.scale.setScalar(BOID_CARD_SCALE);
+
+            let sepX = 0, sepY = 0, sepZ = 0;
+            let alignVx = 0, alignVy = 0, alignVz = 0, alignN = 0;
+
+            for (let j = 0; j < boidCount; j++) {
+              if (j === i) continue;
+              const j3 = j * 3;
+              const dx = px - _boidPosArr[j3];
+              const dy = py - _boidPosArr[j3 + 1];
+              const dz = pz - _boidPosArr[j3 + 2];
+              const dsq = dx * dx + dy * dy + dz * dz;
+
+              if (dsq < BOID_ALIGN_DIST_SQ && dsq > 0) {
+                alignVx += _boidVelArr[j3]; alignVy += _boidVelArr[j3 + 1]; alignVz += _boidVelArr[j3 + 2]; alignN++;
+                if (dsq < BOID_SEP_DIST_SQ) {
+                  const d = Math.sqrt(dsq);
+                  sepX += dx / d; sepY += dy / d; sepZ += dz / d;
+                }
+              }
+            }
+
+            // Separation
+            boid.velocity.x += sepX * BOID_SEP_W * boidScale;
+            boid.velocity.y += sepY * BOID_SEP_W * boidScale;
+            boid.velocity.z += sepZ * BOID_SEP_W * boidScale;
+
+            // Alignment
+            if (alignN > 0) {
+              boid.velocity.x += (alignVx / alignN - boid.velocity.x) * BOID_ALIGN_W * boidScale;
+              boid.velocity.y += (alignVy / alignN - boid.velocity.y) * BOID_ALIGN_W * boidScale;
+              boid.velocity.z += (alignVz / alignN - boid.velocity.z) * BOID_ALIGN_W * boidScale;
+            }
+
+            // Shell boundary — gradual ramp so turns aren't abrupt at the shell edge
+            const dist = Math.sqrt(px * px + py * py + pz * pz);
+            if (dist > 0.001) {
+              const invD = 1 / dist;
+              if (dist > BOID_BOUNDS_MAX) {
+                // Force grows proportionally beyond the boundary — smooth curve-away
+                const excess = Math.min((dist - BOID_BOUNDS_MAX) / 8, 1.5);
+                const w = BOID_BOUNDS_W * (1 + excess) * boidScale;
+                boid.velocity.x -= px * invD * w;
+                boid.velocity.y -= py * invD * w;
+                boid.velocity.z -= pz * invD * w;
+              }
+              // During forming, only guard against going inside the sphere itself (not the outer shell)
+              const innerBound = isForming ? 18 : BOID_BOUNDS_MIN;
+              if (dist < innerBound) {
+                const deficit = Math.min((innerBound - dist) / 8, 1.5);
+                const w = BOID_BOUNDS_W * (1 + deficit);
+                boid.velocity.x += px * invD * w;
+                boid.velocity.y += py * invD * w;
+                boid.velocity.z += pz * invD * w;
+              }
+            }
+
+            // Small random nudge — keeps the flock organically varied
+            boid.velocity.x += (Math.random() - 0.5) * BOID_NOISE;
+            boid.velocity.y += (Math.random() - 0.5) * BOID_NOISE;
+            boid.velocity.z += (Math.random() - 0.5) * BOID_NOISE;
+
+            // Inverse-square pull toward the camera view point — only for birds outside
+            // the view frustum. Visible birds fly freely; off-screen birds drift back in.
+            _frustumPt.set(px, py, pz);
+            if (!_frustum.containsPoint(_frustumPt)) {
+              const vdx = _viewPX - px, vdy = _viewPY - py, vdz = _viewPZ - pz;
+              const vdSq = Math.max(vdx * vdx + vdy * vdy + vdz * vdz, 16);
+              const vdLen = Math.sqrt(vdSq);
+              const vf = (BOID_VIEW_W / vdSq) * boidScale;
+              boid.velocity.x += (vdx / vdLen) * vf;
+              boid.velocity.y += (vdy / vdLen) * vf;
+              boid.velocity.z += (vdz / vdLen) * vf;
+            }
+
+            // Homing force — per-card ramp, uses pre-computed homeBase
+            if (homeBase) {
+              const homeStrength = cardEased * 0.18;
+              boid.velocity.x += (homeBase.x - obj.position.x) * homeStrength;
+              boid.velocity.y += (homeBase.y - obj.position.y) * homeStrength;
+              boid.velocity.z += (homeBase.z - obj.position.z) * homeStrength;
+            }
+
+            // Speed: full forming speed during transit, ease off in the final 14 units for smooth landing
+            const proximityFactor = isForming ? Math.min(distToHome / 14, 1) : 1;
+            const maxSpd = (BOID_SPEED + BOID_SPEED_VAR) * (isForming ? (0.5 + proximityFactor * 1.5) : 1);
+            const minSpd = Math.max(0.005, (BOID_SPEED - BOID_SPEED_VAR) * (isForming ? proximityFactor * 0.3 : 1));
+            const spd = boid.velocity.length();
+            if (spd > maxSpd) boid.velocity.multiplyScalar(maxSpd / spd);
+            else if (spd > 0.001 && spd < minSpd) boid.velocity.multiplyScalar(minSpd / spd);
+
+            obj.position.x += boid.velocity.x;
+            obj.position.y += boid.velocity.y;
+            obj.position.z += boid.velocity.z;
+
+            // --- Orientation ---
+            // Face (+Z local) = outward from scene centre — always visible to observers outside.
+            // Up (+Y local) = velocity component perpendicular to face — short end of card leads.
+            // Smoothed via slerp each frame to prevent snapping on direction changes.
+            const vLen = boid.velocity.length();
+            if (vLen > 0.001) {
+              _boidFwd.set(boid.velocity.x / vLen, boid.velocity.y / vLen, boid.velocity.z / vLen);
+
+              // Face = toward camera so the card front is always visible to the viewer.
+              // Uses card's local-space position as approximation of world position.
+              const { x: camX, y: camY, z: camZ } = state.camera.position;
+              const cfx = camX - px, cfy = camY - py, cfz = camZ - pz;
+              const cfLen = Math.sqrt(cfx * cfx + cfy * cfy + cfz * cfz);
+              if (cfLen > 0.001) {
+                _boidFace.set(cfx / cfLen, cfy / cfLen, cfz / cfLen);
+                // Up = velocity with face component removed (card top follows travel direction)
+                const velFaceDot = _boidFwd.x * _boidFace.x + _boidFwd.y * _boidFace.y + _boidFwd.z * _boidFace.z;
+                _boidUp.set(
+                  _boidFwd.x - _boidFace.x * velFaceDot,
+                  _boidFwd.y - _boidFace.y * velFaceDot,
+                  _boidFwd.z - _boidFace.z * velFaceDot,
+                );
+                const upLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
+                if (upLen > 0.1) {
+                  _boidUp.x /= upLen; _boidUp.y /= upLen; _boidUp.z /= upLen;
+                } else {
+                  // Velocity mostly toward camera — fall back to world-up rejection from face
+                  const wY = Math.abs(_boidFace.y) < 0.98 ? 1 : 0;
+                  const wZ = Math.abs(_boidFace.y) < 0.98 ? 0 : 1;
+                  const wDot = wY * _boidFace.y + wZ * _boidFace.z;
+                  _boidUp.set(-_boidFace.x * wDot, wY - _boidFace.y * wDot, wZ - _boidFace.z * wDot);
+                  const wLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
+                  if (wLen > 0.001) { _boidUp.x /= wLen; _boidUp.y /= wLen; _boidUp.z /= wLen; }
+                }
+              } else {
+                // Camera at same position as card — use velocity as face direction
+                _boidFace.copy(_boidFwd);
+                if (Math.abs(_boidFwd.y) < 0.98) { _boidUp.set(0, 1, 0); } else { _boidUp.set(0, 0, 1); }
+              }
+
+              // right = up × face — right-handed basis (X=right, Y=up/~velocity, Z=face/outward)
+              _boidRight.crossVectors(_boidUp, _boidFace);
+              _boidMat4.makeBasis(_boidRight, _boidUp, _boidFace);
+
+              // During forming: blend per-card toward sphere-slot orientation
+              if (isForming && cardEased > 0.03) {
+                const targetQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
+                if (targetQ) {
+                  _airplaneQ.setFromRotationMatrix(_boidMat4);
+                  _airplaneQ.slerpQuaternions(_airplaneQ, targetQ, cardEased);
+                } else {
+                  _airplaneQ.setFromRotationMatrix(_boidMat4);
+                }
+              } else {
+                _airplaneQ.setFromRotationMatrix(_boidMat4);
+              }
+              const orientF = isForming ? Math.max(ORIENT_LERP, cardEased * 0.4) : ORIENT_LERP;
+              obj.quaternion.slerp(_airplaneQ, orientF);
+            }
+          }
         }
-      }
-      
-      // BOID + FORMING: murmuration simulation (separation + alignment + cohesion)
-      // with an optional homing force that ramps up during 'forming' to pull each
-      // card to its sphere slot while it continues flying like a bird.
-      if (trickState === 'setup' || trickState === 'forming') {
-        // --- snapshot positions + velocities ---
-        let boidCount = 0;
+
+        // Skip orientation processing entirely during boid/forming states
+        if (trickState === 'setup' || trickState === 'forming') return;
+
+        // Update card orientations and animations
         sphereRef.current.children.forEach((row) => {
           row.children.forEach((cardGroup) => {
-            const boid = boidDataRef.current.get(cardGroup.userData.cardIndex as number);
-            if (!boid) return;
-            const b3 = boidCount * 3;
-            _boidPosArr[b3]     = cardGroup.position.x;
-            _boidPosArr[b3 + 1] = cardGroup.position.y;
-            _boidPosArr[b3 + 2] = cardGroup.position.z;
-            _boidVelArr[b3]     = boid.velocity.x;
-            _boidVelArr[b3 + 1] = boid.velocity.y;
-            _boidVelArr[b3 + 2] = boid.velocity.z;
-            _boidIdxArr[boidCount]   = cardGroup.userData.cardIndex as number;
-            _boidGroupArr[boidCount] = cardGroup as THREE.Object3D;
-            boidCount++;
-          });
-        });
-
-        const isForming      = trickState === 'forming' && formingStartTimeRef.current !== null;
-        const formingElapsed = isForming ? (currentTime - formingStartTimeRef.current!) : 0;
-
-        // Read tunable config once per frame so slider changes take effect immediately
-        const { BOID_SEP_W, BOID_ALIGN_W, BOID_BOUNDS_W, BOID_NOISE, BOID_VIEW_W, BOID_SPEED, BOID_CARD_SCALE, ORIENT_LERP } = boidConfig;
-
-        // Update frustum once per frame for view-attraction culling
-        _frustumMat.multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse);
-        _frustum.setFromProjectionMatrix(_frustumMat);
-
-        // Camera view attraction point — shoot a ray from the camera forward and find
-        // where it hits the shell midpoint sphere. Both the spectator (at origin) and
-        // the audience (inside shell, looking through the sphere) are inside the shell,
-        // so this always resolves to a positive-t intersection in front of the camera.
-        {
-          const me = state.camera.matrixWorld.elements;
-          const cfx = -me[8], cfy = -me[9], cfz = -me[10]; // camera -Z = world forward
-          const cpx = state.camera.position.x, cpy = state.camera.position.y, cpz = state.camera.position.z;
-          const shellMid = (BOID_BOUNDS_MIN + BOID_BOUNDS_MAX) * 0.5;
-          const pDotD = cpx * cfx + cpy * cfy + cpz * cfz;
-          const disc  = pDotD * pDotD - (cpx * cpx + cpy * cpy + cpz * cpz - shellMid * shellMid);
-          const t     = disc >= 0 ? -pDotD + Math.sqrt(disc) : shellMid;
-          _viewPX = cpx + cfx * t;
-          _viewPY = cpy + cfy * t;
-          _viewPZ = cpz + cfz * t;
-        }
-
-        // --- per-boid forces ---
-        for (let i = 0; i < boidCount; i++) {
-          const boid = boidDataRef.current.get(_boidIdxArr[i]);
-          if (!boid) continue;
-
-          const obj = _boidGroupArr[i]!;
-          const i3  = i * 3;
-          const px  = _boidPosArr[i3], py = _boidPosArr[i3 + 1], pz = _boidPosArr[i3 + 2];
-
-          // Per-card staggered forming progress — each card has its own random delay offset
-          const cardDelay    = isForming ? (formingStaggerRef.current.get(_boidIdxArr[i]) ?? 0) : 0;
-          const cardElapsed  = isForming ? Math.max(0, formingElapsed - cardDelay) : 0;
-          const cardProgress = isForming ? Math.min(cardElapsed / (FORMING_DURATION * 0.55), 1.0) : 0;
-          const cardEased    = easeInOutCubic(cardProgress);
-          // Boid forces scale to zero as card homes in so homing force dominates
-          const boidScale    = isForming ? Math.max(0.0, 1 - cardEased * 0.9) : 1.0;
-
-          // Pre-compute distance to sphere slot (used for final approach and speed tuning)
-          const homeBase   = isForming && cardEased > 0.05 ? (obj.userData.basePosition as THREE.Vector3) : null;
-          const distToHome = homeBase ? obj.position.distanceTo(homeBase) : Infinity;
-
-          // Smooth final approach — within 2 units, lerp directly to avoid visible pop.
-          // Scale grows back to full size as the card settles into its slot.
-          if (homeBase && distToHome < 2.0) {
-            boid.velocity.set(0, 0, 0);
-            const approachT = 1.0 - distToHome / 2.0;
-            obj.scale.setScalar(BOID_CARD_SCALE + (1 - BOID_CARD_SCALE) * approachT);
-            obj.position.lerp(homeBase, 0.15);
-            const tQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
-            if (tQ) obj.quaternion.slerp(tQ, 0.2);
-            if (distToHome < 0.05) {
-              obj.position.copy(homeBase);
-              obj.scale.setScalar(1.0);
-              if (tQ) obj.quaternion.copy(tQ);
-            }
-            continue;
-          }
-
-          // Still flying — keep bird scale
-          obj.scale.setScalar(BOID_CARD_SCALE);
-
-          let sepX = 0, sepY = 0, sepZ = 0;
-          let alignVx = 0, alignVy = 0, alignVz = 0, alignN = 0;
-
-          for (let j = 0; j < boidCount; j++) {
-            if (j === i) continue;
-            const j3  = j * 3;
-            const dx  = px - _boidPosArr[j3];
-            const dy  = py - _boidPosArr[j3 + 1];
-            const dz  = pz - _boidPosArr[j3 + 2];
-            const dsq = dx * dx + dy * dy + dz * dz;
-
-            if (dsq < BOID_ALIGN_DIST_SQ && dsq > 0) {
-              alignVx += _boidVelArr[j3]; alignVy += _boidVelArr[j3 + 1]; alignVz += _boidVelArr[j3 + 2]; alignN++;
-              if (dsq < BOID_SEP_DIST_SQ) {
-                const d = Math.sqrt(dsq);
-                sepX += dx / d; sepY += dy / d; sepZ += dz / d;
+            // Scatter state: cards fly away like a flock of birds; selected card stays
+            if (trickState === 'scatter') {
+              const cardComponent = cardGroup.children[0] as THREE.Group;
+              const cardId = cardComponent?.userData?.id as string;
+              if (cardId !== selectedCardId) {
+                const scatter = scatterDataRef.current.get(cardGroup.userData.cardIndex as number);
+                if (scatter) {
+                  const elapsed = currentTime - scatter.startTime;
+                  if (elapsed >= 0) {
+                    const progress = Math.min(elapsed / SCATTER_DURATION, 1.0);
+                    const eased = easeInOutCubic(progress);
+                    _scatterTarget.copy(scatter.localStartPos).addScaledVector(scatter.localDirection, eased * SCATTER_DISTANCE);
+                    cardGroup.position.copy(_scatterTarget);
+                    // Hide once fully scattered — XR cameras ignore the far clipping plane
+                    if (progress >= 1.0) cardGroup.visible = false;
+                  }
+                }
               }
+              return;
             }
-          }
 
-          // Separation
-          boid.velocity.x += sepX * BOID_SEP_W * boidScale;
-          boid.velocity.y += sepY * BOID_SEP_W * boidScale;
-          boid.velocity.z += sepZ * BOID_SEP_W * boidScale;
+            cardGroup.scale.set(1, 1, 1);
+            const currentCardIndex = cardGroup.userData.cardIndex as number;
+            const isAnimating = animatingCardIndicesRef.current.has(currentCardIndex);
+            const hasBeenFlipped = flippedCardIndicesRef.current.has(currentCardIndex);
+            const isSpectator = viewType === 'participant';
+            const isAudience = viewType === 'audience';
 
-          // Alignment
-          if (alignN > 0) {
-            boid.velocity.x += (alignVx / alignN - boid.velocity.x) * BOID_ALIGN_W * boidScale;
-            boid.velocity.y += (alignVy / alignN - boid.velocity.y) * BOID_ALIGN_W * boidScale;
-            boid.velocity.z += (alignVz / alignN - boid.velocity.z) * BOID_ALIGN_W * boidScale;
-          }
-
-          // Shell boundary — gradual ramp so turns aren't abrupt at the shell edge
-          const dist = Math.sqrt(px * px + py * py + pz * pz);
-          if (dist > 0.001) {
-            const invD = 1 / dist;
-            if (dist > BOID_BOUNDS_MAX) {
-              // Force grows proportionally beyond the boundary — smooth curve-away
-              const excess = Math.min((dist - BOID_BOUNDS_MAX) / 8, 1.5);
-              const w = BOID_BOUNDS_W * (1 + excess) * boidScale;
-              boid.velocity.x -= px * invD * w;
-              boid.velocity.y -= py * invD * w;
-              boid.velocity.z -= pz * invD * w;
-            }
-            // During forming, only guard against going inside the sphere itself (not the outer shell)
-            const innerBound = isForming ? 18 : BOID_BOUNDS_MIN;
-            if (dist < innerBound) {
-              const deficit = Math.min((innerBound - dist) / 8, 1.5);
-              const w = BOID_BOUNDS_W * (1 + deficit);
-              boid.velocity.x += px * invD * w;
-              boid.velocity.y += py * invD * w;
-              boid.velocity.z += pz * invD * w;
-            }
-          }
-
-          // Small random nudge — keeps the flock organically varied
-          boid.velocity.x += (Math.random() - 0.5) * BOID_NOISE;
-          boid.velocity.y += (Math.random() - 0.5) * BOID_NOISE;
-          boid.velocity.z += (Math.random() - 0.5) * BOID_NOISE;
-
-          // Inverse-square pull toward the camera view point — only for birds outside
-          // the view frustum. Visible birds fly freely; off-screen birds drift back in.
-          _frustumPt.set(px, py, pz);
-          if (!_frustum.containsPoint(_frustumPt)) {
-            const vdx = _viewPX - px, vdy = _viewPY - py, vdz = _viewPZ - pz;
-            const vdSq = Math.max(vdx * vdx + vdy * vdy + vdz * vdz, 16);
-            const vdLen = Math.sqrt(vdSq);
-            const vf = (BOID_VIEW_W / vdSq) * boidScale;
-            boid.velocity.x += (vdx / vdLen) * vf;
-            boid.velocity.y += (vdy / vdLen) * vf;
-            boid.velocity.z += (vdz / vdLen) * vf;
-          }
-
-          // Homing force — per-card ramp, uses pre-computed homeBase
-          if (homeBase) {
-            const homeStrength = cardEased * 0.18;
-            boid.velocity.x += (homeBase.x - obj.position.x) * homeStrength;
-            boid.velocity.y += (homeBase.y - obj.position.y) * homeStrength;
-            boid.velocity.z += (homeBase.z - obj.position.z) * homeStrength;
-          }
-
-          // Speed: full forming speed during transit, ease off in the final 14 units for smooth landing
-          const proximityFactor = isForming ? Math.min(distToHome / 14, 1) : 1;
-          const maxSpd = (BOID_SPEED + BOID_SPEED_VAR) * (isForming ? (0.5 + proximityFactor * 1.5) : 1);
-          const minSpd = Math.max(0.005, (BOID_SPEED - BOID_SPEED_VAR) * (isForming ? proximityFactor * 0.3 : 1));
-          const spd    = boid.velocity.length();
-          if (spd > maxSpd)                     boid.velocity.multiplyScalar(maxSpd / spd);
-          else if (spd > 0.001 && spd < minSpd) boid.velocity.multiplyScalar(minSpd / spd);
-
-          obj.position.x += boid.velocity.x;
-          obj.position.y += boid.velocity.y;
-          obj.position.z += boid.velocity.z;
-
-          // --- Orientation ---
-          // Face (+Z local) = outward from scene centre — always visible to observers outside.
-          // Up (+Y local) = velocity component perpendicular to face — short end of card leads.
-          // Smoothed via slerp each frame to prevent snapping on direction changes.
-          const vLen = boid.velocity.length();
-          if (vLen > 0.001) {
-            _boidFwd.set(boid.velocity.x / vLen, boid.velocity.y / vLen, boid.velocity.z / vLen);
-
-            // Face = toward camera so the card front is always visible to the viewer.
-            // Uses card's local-space position as approximation of world position.
-            const { x: camX, y: camY, z: camZ } = state.camera.position;
-            const cfx = camX - px, cfy = camY - py, cfz = camZ - pz;
-            const cfLen = Math.sqrt(cfx * cfx + cfy * cfy + cfz * cfz);
-            if (cfLen > 0.001) {
-              _boidFace.set(cfx / cfLen, cfy / cfLen, cfz / cfLen);
-              // Up = velocity with face component removed (card top follows travel direction)
-              const velFaceDot = _boidFwd.x * _boidFace.x + _boidFwd.y * _boidFace.y + _boidFwd.z * _boidFace.z;
-              _boidUp.set(
-                _boidFwd.x - _boidFace.x * velFaceDot,
-                _boidFwd.y - _boidFace.y * velFaceDot,
-                _boidFwd.z - _boidFace.z * velFaceDot,
+            // Handle animating cards
+            if (isAnimating) {
+              cardGroup.getWorldPosition(_worldPosRef.current);
+              const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
+                currentCardIndex,
+                currentTime,
+                _worldPosRef.current,
+                viewType
               );
-              const upLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
-              if (upLen > 0.1) {
-                _boidUp.x /= upLen; _boidUp.y /= upLen; _boidUp.z /= upLen;
-              } else {
-                // Velocity mostly toward camera — fall back to world-up rejection from face
-                const wY = Math.abs(_boidFace.y) < 0.98 ? 1 : 0;
-                const wZ = Math.abs(_boidFace.y) < 0.98 ? 0 : 1;
-                const wDot = wY * _boidFace.y + wZ * _boidFace.z;
-                _boidUp.set(-_boidFace.x * wDot, wY - _boidFace.y * wDot, wZ - _boidFace.z * wDot);
-                const wLen = Math.sqrt(_boidUp.x * _boidUp.x + _boidUp.y * _boidUp.y + _boidUp.z * _boidUp.z);
-                if (wLen > 0.001) { _boidUp.x /= wLen; _boidUp.y /= wLen; _boidUp.z /= wLen; }
-              }
-            } else {
-              // Camera at same position as card — use velocity as face direction
-              _boidFace.copy(_boidFwd);
-              if (Math.abs(_boidFwd.y) < 0.98) { _boidUp.set(0, 1, 0); } else { _boidUp.set(0, 0, 1); }
-            }
 
-            // right = up × face — right-handed basis (X=right, Y=up/~velocity, Z=face/outward)
-            _boidRight.crossVectors(_boidUp, _boidFace);
-            _boidMat4.makeBasis(_boidRight, _boidUp, _boidFace);
+              const shouldSkipAnimation = isAudience && trickState === 'cards-flipping';
+              const inStaggerDelay = positionOffset.length() === 0 && rotationProgress === 0 && !isComplete;
 
-            // During forming: blend per-card toward sphere-slot orientation
-            if (isForming && cardEased > 0.03) {
-              const targetQ = formingTargetQuaternionsRef.current.get(_boidIdxArr[i]);
-              if (targetQ) {
-                _airplaneQ.setFromRotationMatrix(_boidMat4);
-                _airplaneQ.slerpQuaternions(_airplaneQ, targetQ, cardEased);
-              } else {
-                _airplaneQ.setFromRotationMatrix(_boidMat4);
-              }
-            } else {
-              _airplaneQ.setFromRotationMatrix(_boidMat4);
-            }
-            const orientF = isForming ? Math.max(ORIENT_LERP, cardEased * 0.4) : ORIENT_LERP;
-            obj.quaternion.slerp(_airplaneQ, orientF);
-          }
-        }
-      }
-
-      // Skip orientation processing entirely during boid/forming states
-      if (trickState === 'setup' || trickState === 'forming') return;
-
-      // Update card orientations and animations
-      sphereRef.current.children.forEach((row) => {
-        row.children.forEach((cardGroup) => {
-          // Scatter state: cards fly away like a flock of birds; selected card stays
-          if (trickState === 'scatter') {
-            const cardComponent = cardGroup.children[0] as THREE.Group;
-            const cardId = cardComponent?.userData?.id as string;
-            if (cardId !== selectedCardId) {
-              const scatter = scatterDataRef.current.get(cardGroup.userData.cardIndex as number);
-              if (scatter) {
-                const elapsed = currentTime - scatter.startTime;
-                if (elapsed >= 0) {
-                  const progress = Math.min(elapsed / SCATTER_DURATION, 1.0);
-                  const eased = easeInOutCubic(progress);
-                  _scatterTarget.copy(scatter.localStartPos).addScaledVector(scatter.localDirection, eased * SCATTER_DISTANCE);
-                  cardGroup.position.copy(_scatterTarget);
-                  // Hide once fully scattered — XR cameras ignore the far clipping plane
-                  if (progress >= 1.0) cardGroup.visible = false;
-                }
-              }
-            }
-            return;
-          }
-
-          cardGroup.scale.set(1, 1, 1);
-          const currentCardIndex = cardGroup.userData.cardIndex as number;
-          const isAnimating = animatingCardIndicesRef.current.has(currentCardIndex);
-          const hasBeenFlipped = flippedCardIndicesRef.current.has(currentCardIndex);
-          const isSpectator = viewType === 'participant';
-          const isAudience = viewType === 'audience';
-          
-          // Handle animating cards
-          if (isAnimating) {
-            cardGroup.getWorldPosition(_worldPosRef.current);
-            const { positionOffset, rotationProgress, isComplete } = animateCardFlip(
-              currentCardIndex,
-              currentTime,
-              _worldPosRef.current,
-              viewType
-            );
-            
-            const shouldSkipAnimation = isAudience && trickState === 'cards-flipping';
-            const inStaggerDelay = positionOffset.length() === 0 && rotationProgress === 0 && !isComplete;
-            
-            // If we should skip animation (audience during initial flip), just maintain current state
-            if (shouldSkipAnimation) {
-              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
-              cardGroup.position.copy(basePosition);
-              // Don't recalculate orientation - keep whatever orientation the card already has
-              // This prevents cards from appearing to flip as the sphere rotates
-              cardGroup.userData.isFlipped = false;
-            }
-            // During stagger delay in final-flip, maintain current state to prevent flash
-            else if (inStaggerDelay && trickState === 'final-flip') {
-              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
-              cardGroup.position.copy(basePosition);
-              
-              if (isSpectator && hasBeenFlipped) {
-                // Spectator: keep showing backs (face outward)
-                calculateInwardOrientation(cardGroup as THREE.Group, true);
-                cardGroup.userData.isFlipped = true;
-              } else if (isAudience && !hasBeenFlipped) {
-                // Audience: keep showing backs (face inward) until they flip
-                calculateInwardOrientation(cardGroup as THREE.Group, false);
+              // If we should skip animation (audience during initial flip), just maintain current state
+              if (shouldSkipAnimation) {
+                const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+                cardGroup.position.copy(basePosition);
+                // Don't recalculate orientation - keep whatever orientation the card already has
+                // This prevents cards from appearing to flip as the sphere rotates
                 cardGroup.userData.isFlipped = false;
               }
-            } else if (!inStaggerDelay && !shouldSkipAnimation) {
-              // Animate the card
-              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
-              cardGroup.position.copy(basePosition).add(positionOffset);
-              
-              calculateInwardOrientation(cardGroup as THREE.Group);
-              
-              // Calculate flip angle based on flip direction
-              const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
-              const isFinalFlipAudience = trickState === 'final-flip' && isAudience;
-              const isInitialFlipSpectator = trickState === 'cards-flipping' && isSpectator;
-              
-              let flipAngle: number;
-              if (isFinalFlipSpectator) {
-                // Spectator: Backs (outward) to faces (inward) - PI → 0
-                flipAngle = Math.PI * (1 - rotationProgress);
-              } else if (isFinalFlipAudience) {
-                // Audience: start at 0 (inward), flip to PI (outward)
-                flipAngle = rotationProgress * Math.PI;
-              } else if (isInitialFlipSpectator) {
-                // Initial flip for spectator: Faces (inward) to backs (outward) - 0 → PI
-                flipAngle = rotationProgress * Math.PI;
-              } else {
-                // Default: 0 → PI
-                flipAngle = rotationProgress * Math.PI;
-              }
-              
-              cardGroup.rotateY(flipAngle);
-            }
-            
-            // Handle animation completion
-            if (isComplete && !shouldSkipAnimation) {
-              if (trickState === 'final-flip' && isSpectator) {
-                flippedCardIndicesRef.current.delete(currentCardIndex);
-              } else {
-                flippedCardIndicesRef.current.add(currentCardIndex);
-              }
-              animatingCardIndicesRef.current.delete(currentCardIndex);
-              completedCount++;
-            } else if (shouldSkipAnimation && isComplete) {
-              animatingCardIndicesRef.current.delete(currentCardIndex);
-              completedCount++;
-            }
-          }
-          // Handle non-animating cards
-          else {
-            const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
-            if (basePosition) {
-              cardGroup.position.copy(basePosition);
-            }
-            
-            // Determine orientation based on view and flip state
-            // Spectator (center): sees faces when cards face inward, backs when cards face outward
-            // Audience (outside): sees backs when cards face inward, faces when cards face outward
-            
-            if (isSpectator) {
-              // Spectator logic
-              if (hasBeenFlipped) {
-                // After initial flip, before final flip: show backs (face outward)
-                calculateInwardOrientation(cardGroup as THREE.Group, true);
-                cardGroup.userData.isFlipped = true;
-              } else {
-                // Initial state or after final flip: show faces (face inward)
-                calculateInwardOrientation(cardGroup as THREE.Group, false);
-                cardGroup.userData.isFlipped = false;
-              }
-            } else if (isAudience) {
-              const shouldMaintainOrientation = trickState === 'cards-flipping'
-                || trickState === 'participant-selection'
-                || trickState === 'sphere-aligned';
-              
-              if (shouldMaintainOrientation) {
-                const frozenRotation = frozenCardRotationsRef.current.get(currentCardIndex);
-                if (frozenRotation) {
-                  cardGroup.quaternion.copy(frozenRotation);
-                }
-              } else {
-                if (hasBeenFlipped) {
+              // During stagger delay in final-flip, maintain current state to prevent flash
+              else if (inStaggerDelay && trickState === 'final-flip') {
+                const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+                cardGroup.position.copy(basePosition);
+
+                if (isSpectator && hasBeenFlipped) {
+                  // Spectator: keep showing backs (face outward)
                   calculateInwardOrientation(cardGroup as THREE.Group, true);
                   cardGroup.userData.isFlipped = true;
-                } else {
+                } else if (isAudience && !hasBeenFlipped) {
+                  // Audience: keep showing backs (face inward) until they flip
                   calculateInwardOrientation(cardGroup as THREE.Group, false);
                   cardGroup.userData.isFlipped = false;
                 }
+              } else if (!inStaggerDelay && !shouldSkipAnimation) {
+                // Animate the card
+                const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+                cardGroup.position.copy(basePosition).add(positionOffset);
+
+                calculateInwardOrientation(cardGroup as THREE.Group);
+
+                // Calculate flip angle based on flip direction
+                const isFinalFlipSpectator = trickState === 'final-flip' && isSpectator;
+                const isFinalFlipAudience = trickState === 'final-flip' && isAudience;
+                const isInitialFlipSpectator = trickState === 'cards-flipping' && isSpectator;
+
+                let flipAngle: number;
+                if (isFinalFlipSpectator) {
+                  // Spectator: Backs (outward) to faces (inward) - PI → 0
+                  flipAngle = Math.PI * (1 - rotationProgress);
+                } else if (isFinalFlipAudience) {
+                  // Audience: start at 0 (inward), flip to PI (outward)
+                  flipAngle = rotationProgress * Math.PI;
+                } else if (isInitialFlipSpectator) {
+                  // Initial flip for spectator: Faces (inward) to backs (outward) - 0 → PI
+                  flipAngle = rotationProgress * Math.PI;
+                } else {
+                  // Default: 0 → PI
+                  flipAngle = rotationProgress * Math.PI;
+                }
+
+                cardGroup.rotateY(flipAngle);
+              }
+
+              // Handle animation completion
+              if (isComplete && !shouldSkipAnimation) {
+                if (trickState === 'final-flip' && isSpectator) {
+                  flippedCardIndicesRef.current.delete(currentCardIndex);
+                } else {
+                  flippedCardIndicesRef.current.add(currentCardIndex);
+                }
+                animatingCardIndicesRef.current.delete(currentCardIndex);
+                completedCount++;
+              } else if (shouldSkipAnimation && isComplete) {
+                animatingCardIndicesRef.current.delete(currentCardIndex);
+                completedCount++;
               }
             }
-          }
+            // Handle non-animating cards
+            else {
+              const basePosition = cardGroup.userData.basePosition as THREE.Vector3;
+              if (basePosition) {
+                cardGroup.position.copy(basePosition);
+              }
+
+              // Determine orientation based on view and flip state
+              // Spectator (center): sees faces when cards face inward, backs when cards face outward
+              // Audience (outside): sees backs when cards face inward, faces when cards face outward
+
+              if (isSpectator) {
+                // Spectator logic
+                if (hasBeenFlipped) {
+                  // After initial flip, before final flip: show backs (face outward)
+                  calculateInwardOrientation(cardGroup as THREE.Group, true);
+                  cardGroup.userData.isFlipped = true;
+                } else {
+                  // Initial state or after final flip: show faces (face inward)
+                  calculateInwardOrientation(cardGroup as THREE.Group, false);
+                  cardGroup.userData.isFlipped = false;
+                }
+              } else if (isAudience) {
+                const shouldMaintainOrientation = trickState === 'cards-flipping'
+                  || trickState === 'participant-selection'
+                  || trickState === 'sphere-aligned';
+
+                if (shouldMaintainOrientation) {
+                  const frozenRotation = frozenCardRotationsRef.current.get(currentCardIndex);
+                  if (frozenRotation) {
+                    cardGroup.quaternion.copy(frozenRotation);
+                  }
+                } else {
+                  if (hasBeenFlipped) {
+                    calculateInwardOrientation(cardGroup as THREE.Group, true);
+                    cardGroup.userData.isFlipped = true;
+                  } else {
+                    calculateInwardOrientation(cardGroup as THREE.Group, false);
+                    cardGroup.userData.isFlipped = false;
+                  }
+                }
+              }
+            }
+          });
         });
-      });
       }
     } catch (err) {
       // eslint-disable-next-line no-console

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Html } from '@react-three/drei';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BackSide } from 'three';
 import { LANDMARKS } from '@/config/landmarks';
@@ -23,6 +24,8 @@ export function LandmarkGallery({
 }) {
   const [index, setIndex] = useState(0);
   const socket = useSocket();
+  const { gl } = useThree();
+  const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
 
   // Load current texture with graceful error handling
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -36,6 +39,13 @@ export function LandmarkGallery({
     const applyTexture = (tex: THREE.Texture) => {
       if (!active) { tex.dispose(); return; }
       tex.colorSpace = THREE.SRGBColorSpace;
+      // Panoramas don't benefit from mipmaps — disable them and use LinearFilter for
+      // sharper sampling. Max anisotropy reduces blurring at oblique viewing angles.
+      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.anisotropy = maxAnisotropy;
+      tex.needsUpdate = true;
       const img = tex.image as HTMLImageElement;
       const ratio = img ? img.naturalWidth / img.naturalHeight : 2;
       setDisplayMode(ratio >= 1.9 && ratio <= 2.1 ? 'spherical' : 'flat');
@@ -58,7 +68,7 @@ export function LandmarkGallery({
     );
 
     return () => { active = false; };
-  }, [index]);
+  }, [index, maxAnisotropy]);
 
   // Receive index updates driven by TrickControls (magician) — pure receiver, never re-emits
   useEffect(() => {
@@ -102,7 +112,7 @@ export function LandmarkGallery({
         // needs shader recompilation (USE_MAP define) when going from no-map to a map,
         // and R3F doesn't always set needsUpdate automatically for that transition.
         <mesh key={texture?.uuid ?? 'loading'} position={[0, 0, 0]}>
-          <sphereGeometry args={[50, 60, 40]} />
+          <sphereGeometry args={[50, 128, 64]} />
           <meshBasicMaterial map={texture} side={BackSide} />
         </mesh>
       ) : (

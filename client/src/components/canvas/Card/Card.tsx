@@ -6,7 +6,7 @@ import { FlipState, ForcedValue, ViewType } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
 
 // One dark material shared across all Card instances — never changes
-const _darkMaterial = new THREE.MeshPhongMaterial({
+const _darkMaterial = new THREE.MeshLambertMaterial({
   transparent: true,
   opacity: 0,
   side: THREE.DoubleSide,
@@ -62,15 +62,15 @@ export const Card = memo(function Card({
   const backOpacity = viewType === 'audience' ? 0.7 : 1.0;
 
   const materialsRef = useRef<{
-    front: THREE.MeshPhongMaterial;
-    back: THREE.MeshPhongMaterial;
+    front: THREE.MeshLambertMaterial;
+    back: THREE.MeshLambertMaterial;
   }>({
-    front: new THREE.MeshPhongMaterial({
+    front: new THREE.MeshLambertMaterial({
       color: "#ffffff",
       transparent: true,
       side: THREE.FrontSide,
     }),
-    back: new THREE.MeshPhongMaterial({
+    back: new THREE.MeshLambertMaterial({
       color: "#ffffff",
       transparent: true,
       opacity: backOpacity,
@@ -126,19 +126,14 @@ export const Card = memo(function Card({
 
   // Update material properties when needed
   useEffect(() => {
-    // Highlight selected or highlighted cards with a more visible glow
-    const shouldHighlight = isSelected || isHighlighted;
-    
-    // Apply highlighting to front
-    materialsRef.current.front.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
-    materialsRef.current.front.emissive = shouldHighlight ? new THREE.Color("#ff9800") : new THREE.Color("#000000");
-    materialsRef.current.front.emissiveIntensity = shouldHighlight ? 0.5 : 0;
+    const highlighted = isSelected || isHighlighted;
+    materialsRef.current.front.color.set("#ffffff");
+    materialsRef.current.front.emissive.set(highlighted ? "#ffe066" : "#000000");
+    materialsRef.current.front.emissiveIntensity = highlighted ? 0.4 : 0;
     materialsRef.current.front.needsUpdate = true;
-    
-    // Apply highlighting to back as well (for audience view)
-    materialsRef.current.back.color.set(shouldHighlight ? "#ffeb3b" : "#ffffff");
-    materialsRef.current.back.emissive = shouldHighlight ? new THREE.Color("#ff9800") : new THREE.Color("#000000");
-    materialsRef.current.back.emissiveIntensity = shouldHighlight ? 0.5 : 0;
+    materialsRef.current.back.color.set("#ffffff");
+    materialsRef.current.back.emissive.set(highlighted ? "#ffe066" : "#000000");
+    materialsRef.current.back.emissiveIntensity = highlighted ? 0.4 : 0;
     materialsRef.current.back.needsUpdate = true;
   }, [isSelected, isHighlighted]);
   
