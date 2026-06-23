@@ -35,7 +35,7 @@ export function Scene() {
   const { camera, gl, scene } = useThree();
   const [isSpread, setIsSpread] = useState(false);
   const skipGallery = new URLSearchParams(window.location.search).get('gallery') === '0';
-  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck">(skipGallery ? "cards" : "landmarks");
+  const [currentScene, setCurrentScene] = useState<"cards" | "landmarks" | "card-deck" | "end-landmarks">(skipGallery ? "cards" : "landmarks");
   const lastBroadcastQuatRef = useRef({ x: 0, y: 0, z: 0, w: 1 });
   const [pointerHitPos, setPointerHitPos] = useState<THREE.Vector3 | null>(null);
   const lastPointerEmitRef = useRef(0);
@@ -293,6 +293,14 @@ export function Scene() {
     return () => { socket.off('gallery-skip', handle); };
   }, [socket]);
 
+  // Magician can trigger the end gallery on all clients after the trick
+  useEffect(() => {
+    if (!socket) return undefined;
+    const handle = () => setCurrentScene('end-landmarks');
+    socket.on('end-gallery-start', handle);
+    return () => { socket.off('end-gallery-start', handle); };
+  }, [socket]);
+
   // Clear pointer when leaving selection state
   useEffect(() => {
     if (currentState !== 'participant-selection') {
@@ -382,6 +390,11 @@ export function Scene() {
         />
       ) : currentScene === 'landmarks' ? (
         <LandmarkGallery onFinish={() => setCurrentScene('cards')} />
+      ) : currentScene === 'end-landmarks' ? (
+        <LandmarkGallery
+          indexEvent="end-landmark-index"
+          finishEvent="end-landmark-finish"
+        />
       ) : (
         <PanoramaViewer />
       )}

@@ -115,12 +115,16 @@ export function TrickControls() {
   const socket = useSocket();
   const [galleryActive, setGalleryActive] = useState(true);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [endGalleryActive, setEndGalleryActive] = useState(false);
+  const [endGalleryIndex, setEndGalleryIndex] = useState(0);
 
   // Re-enable gallery when the trick resets so the next run starts fresh
   useEffect(() => {
     if (currentState === 'setup') {
       setGalleryActive(true);
       setGalleryIndex(0);
+      setEndGalleryActive(false);
+      setEndGalleryIndex(0);
     }
   }, [currentState]);
 
@@ -148,6 +152,32 @@ export function TrickControls() {
   const skipGallery = () => {
     setGalleryActive(false);
     socket?.emit('gallery-skip');
+  };
+
+  const startEndGallery = () => {
+    setEndGalleryActive(true);
+    socket?.emit('end-gallery-start');
+  };
+
+  const endGalleryPrev = () => {
+    const next = Math.max(0, endGalleryIndex - 1);
+    setEndGalleryIndex(next);
+    socket?.emit('end-landmark-index', { index: next, senderId: socket.id });
+  };
+
+  const endGalleryNext = () => {
+    if (endGalleryIndex < LANDMARKS.length - 1) {
+      const next = endGalleryIndex + 1;
+      setEndGalleryIndex(next);
+      socket?.emit('end-landmark-index', { index: next, senderId: socket.id });
+    } else {
+      finishEndGallery();
+    }
+  };
+
+  const finishEndGallery = () => {
+    setEndGalleryActive(false);
+    socket?.emit('end-landmark-finish', { senderId: socket.id });
   };
 
   const canProgress = () => {
@@ -180,6 +210,20 @@ export function TrickControls() {
         </ControlPanel>
       )}
 
+      {/* End gallery controls — shown while end gallery is active */}
+      {endGalleryActive && (
+        <ControlPanel>
+          <StateDisplay>
+            End Gallery
+            <StateName>{endGalleryIndex + 1} / {LANDMARKS.length}</StateName>
+          </StateDisplay>
+          <ButtonGroup>
+            <Button variant="secondary" onClick={endGalleryPrev} disabled={endGalleryIndex === 0}>← Prev</Button>
+            <Button onClick={endGalleryNext}>{endGalleryIndex < LANDMARKS.length - 1 ? 'Next →' : 'Finish'}</Button>
+          </ButtonGroup>
+        </ControlPanel>
+      )}
+
       <ControlPanel>
         <StateDisplay>
           Current State
@@ -201,21 +245,26 @@ export function TrickControls() {
         )}
         
         <ButtonGroup>
-          <Button 
-            onClick={nextState} 
+          <Button
+            onClick={nextState}
             disabled={!canProgress()}
             title={!canProgress() ? 'Cannot progress from current state' : 'Progress to next state'}
           >
             {currentState === 'scatter' ? 'Complete' : 'Next State'}
           </Button>
-          <Button 
-            variant="secondary" 
+          <Button
+            variant="secondary"
             onClick={resetTrick}
             title="Reset trick to setup state"
           >
             Reset
           </Button>
         </ButtonGroup>
+        {currentState === 'scatter' && !endGalleryActive && (
+          <ButtonGroup>
+            <Button onClick={startEndGallery}>Show End Gallery</Button>
+          </ButtonGroup>
+        )}
       </ControlPanel>
     </ControlsContainer>
   );

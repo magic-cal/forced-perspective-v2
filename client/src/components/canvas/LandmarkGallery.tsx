@@ -9,7 +9,15 @@ import { useSocket } from '@/sockets/SocketProvider';
  * LandmarkGallery displays a sequence of panoramas (images/videos) inside a large sphere.
  * Controls (next/prev) are provided via socket for synchronizing between magician/spectator and audience.
  */
-export function LandmarkGallery({ onFinish }: { onFinish?: () => void }) {
+export function LandmarkGallery({
+  onFinish,
+  indexEvent = 'landmark-index',
+  finishEvent = 'landmark-finish',
+}: {
+  onFinish?: () => void;
+  indexEvent?: string;
+  finishEvent?: string;
+}) {
   const [index, setIndex] = useState(0);
   const socket = useSocket();
 
@@ -150,8 +158,8 @@ export function LandmarkGallery({ onFinish }: { onFinish?: () => void }) {
     const handleSetIndex = (data: { index: number }) => {
       setIndex(Math.max(0, Math.min(LANDMARKS.length - 1, data.index)));
     };
-    socket.on('landmark-index', handleSetIndex);
-    return () => socket.off('landmark-index', handleSetIndex);
+    socket.on(indexEvent, handleSetIndex);
+    return () => socket.off(indexEvent, handleSetIndex);
   }, [socket]);
 
   // Listen for remote finish events
@@ -163,8 +171,8 @@ export function LandmarkGallery({ onFinish }: { onFinish?: () => void }) {
       if (onFinish) onFinish();
     };
 
-    socket.on('landmark-finish', handleFinish);
-    return () => socket.off('landmark-finish', handleFinish);
+    socket.on(finishEvent, handleFinish);
+    return () => socket.off(finishEvent, handleFinish);
   }, [socket, onFinish]);
 
   // Cleanup on unmount in case the texture was left allocated
