@@ -222,17 +222,11 @@ class AudioEngine {
         this.sfxCardFormation();
         break;
 
+      // Music continues unchanged through flip, selection and alignment phases
       case 'cards-flipping':
-        this.sfxCardFlip();
-        break;
-
-      // Music continues unchanged through selection and alignment phases
       case 'participant-selection':
       case 'sphere-aligned':
-        break;
-
       case 'final-flip':
-        this.sfxCardFlip();
         break;
 
       case 'scatter':
