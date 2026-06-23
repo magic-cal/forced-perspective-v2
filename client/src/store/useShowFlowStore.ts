@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ShowPhase = 'start-gallery' | 'trick' | 'end-gallery';
+export type ShowPhase = 'landing' | 'start-gallery' | 'trick' | 'end-gallery';
 
 interface ShowFlowState {
   galleryEnabled: boolean;
@@ -15,9 +15,9 @@ interface ShowFlowState {
 const initialGalleryEnabled =
   new URLSearchParams(window.location.search).get('gallery') !== '0';
 
-export const useShowFlowStore = create<ShowFlowState>((set, get) => ({
+export const useShowFlowStore = create<ShowFlowState>((set) => ({
   galleryEnabled: initialGalleryEnabled,
-  showPhase: initialGalleryEnabled ? 'start-gallery' : 'trick',
+  showPhase: 'landing',
   galleryIndex: 0,
 
   setGalleryEnabled: (enabled) => set({ galleryEnabled: enabled }),
@@ -25,9 +25,8 @@ export const useShowFlowStore = create<ShowFlowState>((set, get) => ({
   setGalleryIndex: (index) => set({ galleryIndex: index }),
 
   reset: () => {
-    const { galleryEnabled } = get();
     set({
-      showPhase: galleryEnabled ? 'start-gallery' : 'trick',
+      showPhase: 'landing',
       galleryIndex: 0,
     });
   },

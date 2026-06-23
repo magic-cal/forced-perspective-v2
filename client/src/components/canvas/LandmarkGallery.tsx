@@ -24,135 +24,40 @@ export function LandmarkGallery({
   const [index, setIndex] = useState(0);
   const socket = useSocket();
 
-  // Load current texture (images only for now) with graceful error handling
+  // Load current texture with graceful error handling
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [displayMode, setDisplayMode] = useState<'spherical' | 'flat'>('spherical');
   // Keep a ref to the last texture so we can dispose it when replacing to free GPU memory
   const lastTextureRef = useRef<THREE.Texture | null>(null);
   useEffect(() => {
     let active = true;
-    let createdTexture: THREE.Texture | null = null;
+    const loader = new THREE.TextureLoader();
 
-    const url = LANDMARKS[index];
-
-    const img = new Image();
-    img.src = url;
-
-    img.onload = () => {
-      if (!active) return;
-      // detect equirectangular aspect ratio; default to flat if not 2:1
-      const ratio = img.naturalWidth / img.naturalHeight;
+    const applyTexture = (tex: THREE.Texture) => {
+      if (!active) { tex.dispose(); return; }
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const img = tex.image as HTMLImageElement;
+      const ratio = img ? img.naturalWidth / img.naturalHeight : 2;
       setDisplayMode(ratio >= 1.9 && ratio <= 2.1 ? 'spherical' : 'flat');
-
-      // Normalize to a 2:1 equirectangular canvas to avoid stretching on the sphere.
-      const targetHeight = 1024; // fixed render height for texture
-      const targetWidth = targetHeight * 2;
-      const canvas = document.createElement('canvas');
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-      const ctx = canvas.getContext('2d');
-
-      if (ctx) {
-        // Scale factor to match targetHeight
-        const scale = targetHeight / img.height;
-        const scaledWidth = img.width * scale;
-
-        if (scaledWidth >= targetWidth) {
-          // Image is wider than needed at the target height -> crop center horizontally
-          const sourceWidth = targetWidth / scale; // width in source image to sample
-          const sx = Math.max(0, (img.width - sourceWidth) / 2);
-          ctx.drawImage(img, sx, 0, sourceWidth, img.height, 0, 0, targetWidth, targetHeight);
-        } else {
-          // Image is narrower than target -> draw centered with black bars on sides
-          ctx.fillStyle = 'black';
-          ctx.fillRect(0, 0, targetWidth, targetHeight);
-          const dx = Math.round((targetWidth - scaledWidth) / 2);
-          ctx.drawImage(img, 0, 0, img.width, img.height, dx, 0, Math.round(scaledWidth), targetHeight);
-        }
-
-        createdTexture = new THREE.CanvasTexture(canvas);
-      } else {
-        createdTexture = new THREE.Texture(img);
-      }
-
-      createdTexture.needsUpdate = true;
-      // Try to set correct color space/encoding
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      if (THREE && (THREE as any).SRGBColorSpace) {
-        // @ts-ignore
-        createdTexture.colorSpace = (THREE as any).SRGBColorSpace;
-      } else if ((THREE as any).sRGBEncoding) {
-        createdTexture.encoding = (THREE as any).sRGBEncoding;
-      }
-
-      // Replace texture and dispose previous to free GPU memory
       const prev = lastTextureRef.current;
-      lastTextureRef.current = createdTexture;
-      setTexture(createdTexture);
-      try {
-        if (prev && prev !== createdTexture) prev.dispose();
-      } catch (e) {
-        // ignore dispose errors
-      }
+      lastTextureRef.current = tex;
+      setTexture(tex);
+      try { if (prev && prev !== tex) prev.dispose(); } catch (_) {}
     };
 
-    img.onerror = (err) => {
-      // If image fails to load, fall back to first local asset if available
-      console.error('Landmark image load error:', url, err);
-      if (!active) return;
-      // Try fallback local image
-      const fallbackUrl = '/src/assets/house.jpg';
-      const fallbackImg = new Image();
-      fallbackImg.src = fallbackUrl;
-      fallbackImg.onload = () => {
-        if (!active) return;
+    loader.load(
+      LANDMARKS[index],
+      applyTexture,
+      undefined,
+      (err) => {
+        console.error('Landmark image load error:', LANDMARKS[index], err);
+        loader.load('/src/assets/house.jpg', applyTexture, undefined, () => {
+          if (active) setTexture(null);
+        });
+      },
+    );
 
-        // Create canvas-normalized texture for fallback as well
-        const targetHeight = 1024;
-        const targetWidth = targetHeight * 2;
-        const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const scale = targetHeight / fallbackImg.height;
-          const scaledWidth = fallbackImg.width * scale;
-          if (scaledWidth >= targetWidth) {
-            const sourceWidth = targetWidth / scale;
-            const sx = Math.max(0, (fallbackImg.width - sourceWidth) / 2);
-            ctx.drawImage(fallbackImg, sx, 0, sourceWidth, fallbackImg.height, 0, 0, targetWidth, targetHeight);
-          } else {
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, targetWidth, targetHeight);
-            const dx = Math.round((targetWidth - scaledWidth) / 2);
-            ctx.drawImage(fallbackImg, 0, 0, fallbackImg.width, fallbackImg.height, dx, 0, Math.round(scaledWidth), targetHeight);
-          }
-          createdTexture = new THREE.CanvasTexture(canvas);
-        } else {
-          createdTexture = new THREE.Texture(fallbackImg);
-        }
-
-        createdTexture.needsUpdate = true;
-        const prev = lastTextureRef.current;
-        lastTextureRef.current = createdTexture;
-        setTexture(createdTexture);
-        try {
-          if (prev && prev !== createdTexture) prev.dispose();
-        } catch (e) { }
-      };
-      fallbackImg.onerror = () => {
-        // Give up and clear texture (material will render fallback color)
-        setTexture(null);
-      };
-    };
-
-    return () => {
-      // mark inactive; do not dispose the texture here because it may still be
-      // referenced by the material. Allow garbage collection when the component
-      // unmounts or when the texture is no longer referenced.
-      active = false;
-    };
+    return () => { active = false; };
   }, [index]);
 
   // Receive index updates driven by TrickControls (magician) — pure receiver, never re-emits
@@ -192,13 +97,13 @@ export function LandmarkGallery({
 
   return (
     <group>
-      <ambientLight intensity={1} />
-      <pointLight position={[-10, -10, -10]} intensity={1} />
-
       {displayMode === 'spherical' ? (
-        <mesh position={[0, 0, 0]}>
+        // key forces a new material whenever the texture changes — meshBasicMaterial
+        // needs shader recompilation (USE_MAP define) when going from no-map to a map,
+        // and R3F doesn't always set needsUpdate automatically for that transition.
+        <mesh key={texture?.uuid ?? 'loading'} position={[0, 0, 0]}>
           <sphereGeometry args={[50, 60, 40]} />
-          <meshStandardMaterial map={texture} side={BackSide} color={0xffffff} />
+          <meshBasicMaterial map={texture} side={BackSide} />
         </mesh>
       ) : (
         // Flat HTML fallback for non-equirectangular images to prevent distortion

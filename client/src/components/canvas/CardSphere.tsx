@@ -217,10 +217,13 @@ export function CardSphere({
       frozenCardRotationsRef.current = new Map();
       hasSphereRotationEmittedRef.current = false;
 
-      // Reset sphere rotation
+      // Reset sphere rotation and card visibility
       if (sphereRef.current) {
         sphereRef.current.rotation.y = 0;
-        sphereRef.current.children.forEach((row) => { row.rotation.y = 0; });
+        sphereRef.current.children.forEach((row) => {
+          row.rotation.y = 0;
+          row.children.forEach((cardGroup) => { cardGroup.visible = true; });
+        });
       }
     }
   }, [trickState]);
@@ -873,6 +876,8 @@ export function CardSphere({
                   const eased = easeInOutCubic(progress);
                   _scatterTarget.copy(scatter.localStartPos).addScaledVector(scatter.localDirection, eased * SCATTER_DISTANCE);
                   cardGroup.position.copy(_scatterTarget);
+                  // Hide once fully scattered — XR cameras ignore the far clipping plane
+                  if (progress >= 1.0) cardGroup.visible = false;
                 }
               }
             }

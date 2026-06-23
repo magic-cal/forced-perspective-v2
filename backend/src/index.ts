@@ -19,6 +19,21 @@ interface SessionState {
   rotationStopTime: number | null;
   sphereRotation: number;
   currentTrickState: string;
+  showPhase: string;
+  galleryIndex: number;
+  galleryEnabled: boolean;
+}
+
+function buildSessionPayload(session: SessionState): SessionStateEventData {
+  return {
+    sessionStartTime: session.sessionStartTime,
+    rotationStopTime: session.rotationStopTime,
+    sphereRotation: session.sphereRotation,
+    currentTrickState: session.currentTrickState,
+    showPhase: session.showPhase,
+    galleryIndex: session.galleryIndex,
+    galleryEnabled: session.galleryEnabled,
+  };
 }
 
 function makeSessionState(): SessionState {
@@ -27,6 +42,9 @@ function makeSessionState(): SessionState {
     rotationStopTime: null,
     sphereRotation: 0,
     currentTrickState: "setup",
+    showPhase: "landing",
+    galleryIndex: 0,
+    galleryEnabled: true,
   };
 }
 
@@ -86,26 +104,17 @@ export class ForcedPerspectiveServer {
         event: "trick-state-change",
         callback: (data: TrickStateChangedEventData, broadcast) => {
           session.currentTrickState = data.state;
+          session.showPhase = "trick";
           if (data.state === "forming") {
             // Reset epoch clock so all clients start row rotation from 0 simultaneously
             session.sessionStartTime = Date.now();
             session.rotationStopTime = null;
-            broadcast("session-state", {
-              sessionStartTime: session.sessionStartTime,
-              rotationStopTime: session.rotationStopTime,
-              sphereRotation: session.sphereRotation,
-              currentTrickState: session.currentTrickState,
-            } as SessionStateEventData);
+            broadcast("session-state", buildSessionPayload(session));
           }
           if (data.state === "participant-selection") {
             // Freeze epoch so all clients lock sphere rotation at the same angle
             session.rotationStopTime = Date.now();
-            broadcast("session-state", {
-              sessionStartTime: session.sessionStartTime,
-              rotationStopTime: session.rotationStopTime,
-              sphereRotation: session.sphereRotation,
-              currentTrickState: session.currentTrickState,
-            } as SessionStateEventData);
+            broadcast("session-state", buildSessionPayload(session));
           }
           broadcast("trick-state-change", data);
         },
@@ -146,6 +155,8 @@ export class ForcedPerspectiveServer {
           session.rotationStopTime = null;
           session.sphereRotation = 0;
           session.currentTrickState = "setup";
+          session.showPhase = "landing";
+          session.galleryIndex = 0;
           broadcast("trick-reset", data);
         },
       },
@@ -159,18 +170,22 @@ export class ForcedPerspectiveServer {
       {
         event: "landmark-index",
         callback: (data: any, broadcast) => {
+          session.showPhase = "start-gallery";
+          session.galleryIndex = data.index ?? 0;
           broadcast("landmark-index", data);
         },
       },
       {
         event: "landmark-finish",
         callback: (data: any, broadcast) => {
+          session.showPhase = "trick";
           broadcast("landmark-finish", data);
         },
       },
       {
         event: "gallery-skip",
         callback: (_data: any, broadcast) => {
+          session.showPhase = "trick";
           broadcast("gallery-skip", null);
         },
       },
@@ -180,6 +195,38 @@ export class ForcedPerspectiveServer {
           broadcast("pointer-hit", data);
         },
       },
+      {
+        event: "show-start",
+        callback: (data: any, broadcast) => {
+          console.log("[server](show-start)");
+          session.galleryEnabled = data.galleryEnabled ?? true;
+          session.showPhase = session.galleryEnabled ? "start-gallery" : "trick";
+          session.galleryIndex = 0;
+          broadcast("show-start", data);
+        },
+      },
+      {
+        event: "end-gallery-start",
+        callback: (data: any, broadcast) => {
+          session.showPhase = "end-gallery";
+          session.galleryIndex = 0;
+          broadcast("end-gallery-start", data);
+        },
+      },
+      {
+        event: "end-landmark-index",
+        callback: (data: any, broadcast) => {
+          session.galleryIndex = data.index ?? 0;
+          broadcast("end-landmark-index", data);
+        },
+      },
+      {
+        event: "force-refresh",
+        callback: (_data: any, broadcast) => {
+          console.log("[server](force-refresh): broadcasting to all clients");
+          broadcast("force-refresh", { timestamp: Date.now() });
+        },
+      },
     ];
 
     this.socketManager = new SocketManager(
@@ -187,13 +234,7 @@ export class ForcedPerspectiveServer {
       this.port,
       eventListeners,
       (emit) => {
-        const payload: SessionStateEventData = {
-          sessionStartTime: session.sessionStartTime,
-          rotationStopTime: session.rotationStopTime,
-          sphereRotation: session.sphereRotation,
-          currentTrickState: session.currentTrickState,
-        };
-        emit("session-state", payload);
+        emit("session-state", buildSessionPayload(session));
       },
     );
     this.socketManager.startServer();

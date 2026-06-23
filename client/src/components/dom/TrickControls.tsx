@@ -1,6 +1,6 @@
 import styled from 'styled-components';
 import { useGameStore } from '@/store/gameStore';
-import { useShowFlow, TRICK_STEPS } from '@/hooks/useShowFlow';
+import { useShowFlow } from '@/hooks/useShowFlow';
 import { LANDMARKS } from '@/config/landmarks';
 
 const ControlsContainer = styled.div`
@@ -109,14 +109,15 @@ const TRICK_STATE_LABELS: Record<string, string> = {
 export function TrickControls() {
   const role = useGameStore((s) => s.role);
   const {
-    handleNext, handleAction, handleGalleryToggle,
-    canNext, galleryEnabled, showPhase, galleryIndex,
+    handleNext, handlePrev, handleAction, handleGalleryToggle, handleForceRefresh,
+    canNext, canPrev, galleryEnabled, showPhase, galleryIndex,
     currentState, selectedCardId,
   } = useShowFlow();
 
   if (role !== 'magician') return null;
 
   const phaseLabel = (() => {
+    if (showPhase === 'landing')       return 'Pre-Show Landing';
     if (showPhase === 'start-gallery') return `Opening Gallery — ${galleryIndex + 1} / ${LANDMARKS.length}`;
     if (showPhase === 'end-gallery')   return `Closing Gallery — ${galleryIndex + 1} / ${LANDMARKS.length}`;
     return 'Trick';
@@ -126,6 +127,7 @@ export function TrickControls() {
   const stateDescription = showPhase === 'trick' ? STATE_DESCRIPTIONS[currentState] : '';
 
   const nextLabel = (() => {
+    if (showPhase === 'landing')       return 'Start Show →';
     if (showPhase === 'start-gallery') return galleryIndex < LANDMARKS.length - 1 ? 'Next Image →' : 'Start Trick →';
     if (showPhase === 'trick' && currentState === 'scatter') return galleryEnabled ? 'End Gallery →' : 'Complete';
     if (showPhase === 'end-gallery') return galleryIndex < LANDMARKS.length - 1 ? 'Next Image →' : 'Done';
@@ -155,11 +157,20 @@ export function TrickControls() {
         )}
 
         <ButtonGroup>
+          <Button variant="secondary" onClick={handlePrev} disabled={!canPrev}>
+            ← Back
+          </Button>
           <Button onClick={handleNext} disabled={!canNext}>
             {nextLabel}
           </Button>
+        </ButtonGroup>
+
+        <ButtonGroup>
           <Button variant="secondary" onClick={() => handleAction('reset')}>
             Reset
+          </Button>
+          <Button variant="secondary" onClick={handleForceRefresh}>
+            Refresh All
           </Button>
         </ButtonGroup>
 

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useSocket } from '@/sockets/SocketProvider';
 import { useTrickStore } from '@/store/useTrickStore';
+import { useShowFlowStore } from '@/store/useShowFlowStore';
 import { useGameStore } from '@/store/gameStore';
 import { useCardSelectionStore } from '@/store/cardSelectionStore';
 import { debug } from '@/config/debug';
@@ -94,22 +95,36 @@ export function useTrickSync() {
     const handleTrickReset = () => {
       debug.trick(`[${role}] Received trick reset`);
       useTrickStore.getState().resetTrick();
-      
-      // Also reset card selection store
+      useShowFlowStore.getState().reset();
       useCardSelectionStore.getState().setSelectedCard(null);
       useCardSelectionStore.getState().setHoveredCard(null);
+    };
+
+    const handleShowStart = (data: { galleryEnabled: boolean }) => {
+      debug.trick(`[${role}] Received show-start`);
+      useShowFlowStore.getState().setShowPhase(data.galleryEnabled ? 'start-gallery' : 'trick');
+    };
+
+    const handleForceRefresh = () => {
+      if (role !== 'magician') {
+        window.location.reload();
+      }
     };
 
     socket.on('trick-state-change', handleStateChange);
     socket.on('unlink-triggered', handleUnlinkTriggered);
     socket.on('card-selected', handleCardSelected);
     socket.on('trick-reset', handleTrickReset);
+    socket.on('show-start', handleShowStart);
+    socket.on('force-refresh', handleForceRefresh);
 
     return () => {
       socket.off('trick-state-change', handleStateChange);
       socket.off('unlink-triggered', handleUnlinkTriggered);
       socket.off('card-selected', handleCardSelected);
       socket.off('trick-reset', handleTrickReset);
+      socket.off('show-start', handleShowStart);
+      socket.off('force-refresh', handleForceRefresh);
     };
   }, [socket, role]);
 }

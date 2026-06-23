@@ -78,6 +78,9 @@ export interface SessionStateEventData {
   rotationStopTime: number | null;
   sphereRotation: number;
   currentTrickState: string;
+  showPhase: string;
+  galleryIndex: number;
+  galleryEnabled: boolean;
 }
 
 export interface SphereRotationSettledEventData {

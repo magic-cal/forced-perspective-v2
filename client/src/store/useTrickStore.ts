@@ -4,6 +4,7 @@ import { TrickState } from '@/types/trick';
 interface TrickStore {
   currentState: TrickState;
   nextState: () => void;
+  prevState: () => void;
   resetTrick: () => void;
   setState: (state: TrickState) => void;
 
@@ -18,7 +19,7 @@ interface TrickStore {
   lockSelection: () => void;
 }
 
-const STATE_SEQUENCE: TrickState[] = [
+export const STATE_SEQUENCE: TrickState[] = [
   'setup',
   'forming',
   'cards-flipping',
@@ -40,6 +41,14 @@ export const useTrickStore = create<TrickStore>((set, get) => ({
     // Auto-unlock when entering participant-selection
     if (state === 'participant-selection') {
       set({ isSelectionLocked: false });
+    }
+  },
+
+  prevState: () => {
+    const { currentState } = get();
+    const currentIndex = STATE_SEQUENCE.indexOf(currentState);
+    if (currentIndex > 0) {
+      set({ currentState: STATE_SEQUENCE[currentIndex - 1] });
     }
   },
 

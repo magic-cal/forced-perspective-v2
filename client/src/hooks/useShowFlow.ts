@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import type { RunnerStep } from 'slideshow-mel';
 import { LANDMARKS } from '@/config/landmarks';
 import { useSocket } from '@/sockets/SocketProvider';
-import { useTrickStore } from '@/store/useTrickStore';
+import { useTrickStore, STATE_SEQUENCE } from '@/store/useTrickStore';
 import { useShowFlowStore } from '@/store/useShowFlowStore';
 import type { TrickState } from '@/types/trick';
 
@@ -32,7 +32,7 @@ function buildSteps(galleryEnabled: boolean): RunnerStep[] {
 
 export function useShowFlow() {
   const socket = useSocket();
-  const { currentState, nextState, setState, resetTrick, selectedCardId } = useTrickStore();
+  const { currentState, nextState, prevState, setState, resetTrick, selectedCardId } = useTrickStore();
   const {
     galleryEnabled, showPhase, galleryIndex,
     setGalleryEnabled, setShowPhase, setGalleryIndex, reset,
@@ -48,16 +48,34 @@ export function useShowFlow() {
   })();
 
   const canNext =
-    showPhase === 'start-gallery'
+    showPhase === 'landing'
       ? true
-      : showPhase === 'trick'
-        ? currentState !== 'scatter'
-          ? currentState !== 'participant-selection' || !!selectedCardId
-          : galleryEnabled // scatter: can proceed only if end gallery follows
-        : galleryIndex < LANDMARKS.length - 1; // end-gallery: blocked on last image
+      : showPhase === 'start-gallery'
+        ? true
+        : showPhase === 'trick'
+          ? currentState !== 'scatter'
+            ? currentState !== 'participant-selection' || !!selectedCardId
+            : galleryEnabled // scatter: can proceed only if end gallery follows
+          : galleryIndex < LANDMARKS.length - 1; // end-gallery: blocked on last image
+
+  const canPrev =
+    showPhase === 'landing'
+      ? false
+      : showPhase === 'start-gallery'
+        ? galleryIndex > 0
+        : showPhase === 'trick'
+          ? true
+          : true; // end-gallery: always can go back
 
   const handleNext = useCallback(() => {
     if (!canNext) return;
+
+    if (showPhase === 'landing') {
+      const nextPhase = galleryEnabled ? 'start-gallery' : 'trick';
+      setShowPhase(nextPhase);
+      socket?.emit('show-start', { galleryEnabled });
+      return;
+    }
 
     if (showPhase === 'start-gallery') {
       if (galleryIndex < LANDMARKS.length - 1) {
@@ -117,6 +135,46 @@ export function useShowFlow() {
     }
   }, [resetTrick, reset, socket]);
 
+  const handlePrev = useCallback(() => {
+    if (!canPrev) return;
+
+    if (showPhase === 'start-gallery') {
+      const prev = galleryIndex - 1;
+      setGalleryIndex(prev);
+      socket?.emit('landmark-index', { index: prev, senderId: socket?.id });
+    } else if (showPhase === 'trick') {
+      const currentIndex = STATE_SEQUENCE.indexOf(currentState);
+      if (currentIndex > 0) {
+        prevState();
+        const newState = useTrickStore.getState().currentState;
+        socket?.emit('trick-state-change', { state: newState, timestamp: Date.now() });
+      } else if (galleryEnabled) {
+        setShowPhase('start-gallery');
+        const lastIdx = LANDMARKS.length - 1;
+        setGalleryIndex(lastIdx);
+        socket?.emit('landmark-index', { index: lastIdx, senderId: socket?.id });
+      }
+    } else {
+      // end-gallery
+      if (galleryIndex > 0) {
+        const prev = galleryIndex - 1;
+        setGalleryIndex(prev);
+        socket?.emit('end-landmark-index', { index: prev, senderId: socket?.id });
+      } else {
+        setShowPhase('trick');
+        setState('scatter');
+        socket?.emit('trick-state-change', { state: 'scatter', timestamp: Date.now() });
+      }
+    }
+  }, [
+    canPrev, showPhase, galleryIndex, galleryEnabled, currentState,
+    socket, prevState, setState, setShowPhase, setGalleryIndex,
+  ]);
+
+  const handleForceRefresh = useCallback(() => {
+    socket?.emit('force-refresh', { timestamp: Date.now() });
+  }, [socket]);
+
   const handleGalleryToggle = useCallback(() => {
     const newEnabled = !galleryEnabled;
     setGalleryEnabled(newEnabled);
@@ -130,9 +188,12 @@ export function useShowFlow() {
     allSteps,
     currentStepIndex,
     canNext,
+    canPrev,
     handleNext,
+    handlePrev,
     handleJumpToStep,
     handleAction,
+    handleForceRefresh,
     galleryEnabled,
     handleGalleryToggle,
     showPhase,

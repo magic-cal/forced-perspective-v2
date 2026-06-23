@@ -16,7 +16,7 @@ export default function App() {
 
   // Register with Slideshow Bob when running as an iframe child
   useSlideshowMelIntegration();
-  
+
   return (
     <main className="app-container">
       {/* R3F Canvas - 3D Content (skip for magician) */}

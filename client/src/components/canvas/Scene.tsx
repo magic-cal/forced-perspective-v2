@@ -338,7 +338,7 @@ export function Scene() {
   return (
     <>
       <Preload all />
-      {showPhase === 'trick' && (
+      {(showPhase === 'trick' || showPhase === 'landing') && (
         <Environment preset="sunset" intensity={1} blur={0.65} />
       )}
       {!isPresenting && (
@@ -363,7 +363,7 @@ export function Scene() {
           indexEvent="end-landmark-index"
           finishEvent="end-landmark-finish"
         />
-      ) : (
+      ) : showPhase === 'trick' ? (
         <CardSphere
           radius={15}
           maxCardsPerRow={48}
@@ -373,7 +373,7 @@ export function Scene() {
           selectedCardId={selectedCardId}
           onPointerHit={viewType === 'participant' ? handlePointerHit : undefined}
         />
-      )}
+      ) : null}
       
       {/* Pointer hit indicator - visible to both roles during card selection */}
       {currentState === 'participant-selection' && pointerHitPos && (
