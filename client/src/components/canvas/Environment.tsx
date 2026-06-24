@@ -22,12 +22,14 @@ interface EnvironmentProps {
     | "lobby";
   intensity?: number;
   blur?: number;
+  enableShadows?: boolean;
 }
 
 export function Environment({
   preset = "city",
   intensity = 1,
   blur = 0.65,
+  enableShadows = true,
 }: EnvironmentProps) {
   const lightRef = useRef<THREE.PointLight>(null);
 
@@ -42,9 +44,8 @@ export function Environment({
 
   return (
     <>
-      {/* Performance Optimizations */}
-      <SoftShadows size={25} samples={16} focus={0.5} />
-      <BakeShadows />
+      {enableShadows && <SoftShadows size={25} samples={16} focus={0.5} />}
+      {enableShadows && <BakeShadows />}
 
       {/* Main Omni-directional Light */}
       <pointLight
@@ -53,9 +54,9 @@ export function Environment({
         intensity={intensity * 2}
         distance={20}
         decay={2}
-        castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        castShadow={enableShadows}
+        shadow-mapSize-width={enableShadows ? 2048 : 512}
+        shadow-mapSize-height={enableShadows ? 2048 : 512}
         shadow-camera-far={50}
         shadow-camera-left={-10}
         shadow-camera-right={10}

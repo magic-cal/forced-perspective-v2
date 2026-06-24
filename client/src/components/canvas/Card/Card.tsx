@@ -31,6 +31,7 @@ export interface CardProps {
   flipState?: FlipState;
   disableInternalRotation?: boolean; // Disable mesh rotation when parent handles it
   viewType?: ViewType; // Determines if card backs should be transparent (audience view)
+  isParticipantSelection?: boolean; // Enables heavy audience front glow only during participant-selection
 }
 
 export const Card = memo(function Card({
@@ -50,6 +51,7 @@ export const Card = memo(function Card({
   flipState = 'face-up',
   disableInternalRotation = false,
   viewType = 'participant',
+  isParticipantSelection = false,
 }: CardProps) {
   const group = useRef<THREE.Group>(null);
   // Selector pattern: stable function refs, never triggers re-render on state change
@@ -124,18 +126,18 @@ export const Card = memo(function Card({
     }
   }, [frontTexture, backTexture]);
 
-  // Update material properties when needed
+  // Update material properties when needed.
+  // emissive and emissiveIntensity are plain uniforms — Three.js uploads them automatically
+  // each frame without needing a version bump. needsUpdate is intentionally omitted here;
+  // calling it on every highlight change triggers material re-processing and causes a flash.
   useEffect(() => {
     const highlighted = isSelected || isHighlighted;
-    materialsRef.current.front.color.set("#ffffff");
+    const frontIntensity = highlighted ? (viewType === 'audience' && isParticipantSelection ? 2.5 : 0.4) : 0;
     materialsRef.current.front.emissive.set(highlighted ? "#ffe066" : "#000000");
-    materialsRef.current.front.emissiveIntensity = highlighted ? 0.4 : 0;
-    materialsRef.current.front.needsUpdate = true;
-    materialsRef.current.back.color.set("#ffffff");
+    materialsRef.current.front.emissiveIntensity = frontIntensity;
     materialsRef.current.back.emissive.set(highlighted ? "#ffe066" : "#000000");
     materialsRef.current.back.emissiveIntensity = highlighted ? 0.4 : 0;
-    materialsRef.current.back.needsUpdate = true;
-  }, [isSelected, isHighlighted]);
+  }, [isSelected, isHighlighted, viewType, isParticipantSelection]);
   
   // Update back material opacity based on viewType
   useEffect(() => {

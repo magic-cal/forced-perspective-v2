@@ -1,4 +1,4 @@
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useLoader } from "@react-three/fiber";
 import { useRef, useMemo, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
 import { useXR } from "@react-three/xr";
@@ -94,6 +94,8 @@ const _boidGroupArr: (THREE.Object3D | null)[] = new Array(MAX_BOID_CARDS).fill(
 const _boidVelArr = new Float32Array(MAX_BOID_CARDS * 3); // velocity snapshot for alignment rule
 const _airplaneQ = new THREE.Quaternion();                // scratch for orientation blending
 
+const MAX_BOID_INSTANCES = 600; // safe upper bound — maxCardsPerRow=48 generates ~498 cards
+
 interface BoidData { velocity: THREE.Vector3 }
 
 export function CardSphere({
@@ -114,6 +116,11 @@ export function CardSphere({
     : maxCardsPerRow;
   const isPresenting = useXR((s) => s.isPresenting);
   const boidFrameSkip = isPresenting ? TRICK_CONFIG.PERFORMANCE.xr.boidFrameSkip : 1;
+  const effectiveFormingDuration = isPresenting
+    ? TRICK_CONFIG.PERFORMANCE.xr.formingDuration
+    : viewType === 'audience'
+      ? TRICK_CONFIG.PERFORMANCE.audienceFormingDuration
+      : FORMING_DURATION;
   const sphereRef = useRef<THREE.Group>(null);
   const _worldPosRef = useRef(new THREE.Vector3());
   const flippedCardIndicesRef = useRef<Set<number>>(new Set());
@@ -140,18 +147,57 @@ export function CardSphere({
   const formingStaggerRef = useRef<Map<number, number>>(new Map());
   const frameCountRef = useRef(0);
 
-  // Create and shuffle a deck of all possible cards
+  // Back texture URL (same asset as Card.tsx but resolved relative to this file)
+  const boidBackUrl = useMemo(() => {
+    const backs = import.meta.glob('../../assets/playingCardBacks/*.svg', { as: 'url', eager: true });
+    return backs['../../assets/playingCardBacks/RED_BACK.svg'] || '';
+  }, []);
+  const boidBackTexture = useLoader(THREE.TextureLoader, boidBackUrl);
+
+  // InstancedMesh for boid/forming phases — ~500 cards in 6 draw calls instead of ~3000.
+  // BoxGeometry face order: +X, -X, +Y, -Y, +Z (front, faces camera), -Z (back)
+  // Mirrors Card.tsx's material layout: transparent edges, cream front, textured back.
+  const boidMesh = useMemo(() => {
+    const geo = new THREE.BoxGeometry(
+      CARD_DIMENSIONS.width,
+      CARD_DIMENSIONS.height,
+      CARD_DIMENSIONS.thickness,
+    );
+    const edgeMat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0, side: THREE.DoubleSide });
+    // polygonOffset pushes the InstancedMesh slightly back in depth so individual Card faces
+    // always win on the transition frame where both occupy the same world position — prevents
+    // the diagonal seam caused by the depth buffer bisecting overlapping coplanar quads.
+    const frontMat = new THREE.MeshLambertMaterial({ color: '#f8f0e0', side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const backMat  = new THREE.MeshLambertMaterial({ map: boidBackTexture, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const mesh = new THREE.InstancedMesh(geo, [edgeMat, edgeMat, edgeMat, edgeMat, frontMat, backMat], MAX_BOID_INSTANCES);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    return mesh;
+  }, [boidBackTexture]);
+
+  useEffect(() => {
+    return () => {
+      boidMesh.geometry.dispose();
+      const unique = new Set(boidMesh.material as THREE.Material[]);
+      unique.forEach((m) => m.dispose());
+    };
+  }, [boidMesh]);
+
+  // Create and shuffle a deck of all possible cards, excluding the forced card so it
+  // can only ever appear via the force mechanism on the selected card position.
   const shuffledDeck = useMemo(() => {
     const deck = [];
     for (const suit of CARD_SUITS) {
       for (const value of CARD_VALUES) {
+        if (suit === FORCED_CARD.suit && value === FORCED_CARD.value) continue;
         deck.push({ suit, value });
       }
     }
     return deterministicShuffleArray(deck, 111111);
   }, []);
 
-  // Start flip animation with staggered delays
   const startFlipAnimation = () => {
     const staggerDelay = TRICK_CONFIG.PERFORMANCE.lowPerformanceMode
       ? TRICK_CONFIG.PERFORMANCE.lowPerf.staggerDelayMs
@@ -161,10 +207,7 @@ export function CardSphere({
     const currentTime = Date.now();
 
     for (let i = 0; i < totalCardCountRef.current; i++) {
-      newAnimatingCards.set(i, {
-        startTime: currentTime + (i * staggerDelay),
-        progress: 0,
-      });
+      newAnimatingCards.set(i, { startTime: currentTime + i * staggerDelay, progress: 0 });
     }
 
     animatingCardIndicesRef.current = newAnimatingCards;
@@ -178,11 +221,9 @@ export function CardSphere({
     }
   }, [trickState, viewType]);
 
-  // Trigger final flip — always clear and restart so early state transitions don't skip it
   useEffect(() => {
     if (trickState === 'final-flip' && totalCardCountRef.current > 0) {
       animatingCardIndicesRef.current = new Map();
-      // Ensure all spectator cards are marked as flipped so the animation starts from backs-showing state
       if (viewType === 'participant') {
         const allFlipped = new Set<number>();
         for (let i = 0; i < totalCardCountRef.current; i++) allFlipped.add(i);
@@ -331,7 +372,7 @@ export function CardSphere({
     sphereRef.current.children.forEach((row) => {
       row.children.forEach((cardGroup) => {
         const idx = cardGroup.userData.cardIndex as number;
-        stagger.set(idx, Math.random() * FORMING_DURATION * 0.25);
+        stagger.set(idx, Math.random() * effectiveFormingDuration * 0.25);
         const basePos = cardGroup.userData.basePosition as THREE.Vector3;
         const savedPos = cardGroup.position.clone();
         const savedQ = cardGroup.quaternion.clone();
@@ -418,28 +459,6 @@ export function CardSphere({
       sphereAlignmentStartRef.current = Date.now();
     }
   }, [trickState, selectedCardId, lockSelection, viewType]);
-
-  // Spectator only: flip the selected card face-down when sphere-aligned, so it's
-  // ready to flip back face-up (revealing the forced card) during final-flip.
-  // Delayed until the sphere alignment animation completes so the flip starts on a
-  // settled sphere rather than mid-rotation.
-  useEffect(() => {
-    if (trickState !== 'sphere-aligned' || viewType !== 'participant' || !selectedCardId || !sphereRef.current) return;
-
-    let selectedIndex = -1;
-    sphereRef.current.children.forEach((row) => {
-      row.children.forEach((cardGroup) => {
-        const cardComp = cardGroup.children[0] as THREE.Group;
-        if ((cardComp?.userData?.id as string) === selectedCardId) {
-          selectedIndex = cardGroup.userData.cardIndex as number;
-        }
-      });
-    });
-    if (selectedIndex === -1) return;
-
-    const delay = TRICK_CONFIG.SPHERE_ALIGNMENT.duration;
-    animatingCardIndicesRef.current = new Map([[selectedIndex, { startTime: Date.now() + delay, progress: 0 }]]);
-  }, [trickState, viewType, selectedCardId]);
 
   // Reveal forced card value when entering final-flip so the card shows its true
   // face as it animates from face-down to face-up during the reveal.
@@ -561,6 +580,7 @@ export function CardSphere({
           <group
             key={`${row}-${i}`}
             {...(!isBoidPhase && { position: [x, y + verticalOffset, z] as [number, number, number] })}
+            visible={!isBoidPhase}
             userData={{
               cardIndex: currentCardIndex,
               basePosition: new THREE.Vector3(x, y + verticalOffset, z),
@@ -577,6 +597,7 @@ export function CardSphere({
               forcedValue={cardForcedValue}
               disableInternalRotation={true}
               viewType={viewType}
+              isParticipantSelection={trickState === 'participant-selection' || trickState === 'sphere-aligned'}
               onCardClick={trickState === 'participant-selection' && viewType === 'participant'
                 ? () => handleCardClick(cardId, card.suit, card.value)
                 : undefined}
@@ -787,7 +808,7 @@ export function CardSphere({
             // Per-card staggered forming progress — each card has its own random delay offset
             const cardDelay = isForming ? (formingStaggerRef.current.get(_boidIdxArr[i]) ?? 0) : 0;
             const cardElapsed = isForming ? Math.max(0, formingElapsed - cardDelay) : 0;
-            const cardProgress = isForming ? Math.min(cardElapsed / (FORMING_DURATION * 0.55), 1.0) : 0;
+            const cardProgress = isForming ? Math.min(cardElapsed / (effectiveFormingDuration * 0.55), 1.0) : 0;
             const cardEased = easeInOutCubic(cardProgress);
             // Boid forces scale to zero as card homes in so homing force dominates
             const boidScale = isForming ? Math.max(0.0, 1 - cardEased * 0.9) : 1.0;
@@ -972,7 +993,22 @@ export function CardSphere({
         }
 
         // Skip orientation processing entirely during boid/forming states
-        if (trickState === 'setup' || trickState === 'forming') return;
+        if (trickState === 'setup' || trickState === 'forming') {
+          // Write all card world matrices to the InstancedMesh (1 draw call for all ~150 cards)
+          sphereRef.current.updateWorldMatrix(true, true);
+          let boidInstanceCount = 0;
+          sphereRef.current.children.forEach((row) => {
+            row.children.forEach((cardGroup) => {
+              boidMesh.setMatrixAt(boidInstanceCount++, (cardGroup as THREE.Object3D).matrixWorld);
+            });
+          });
+          boidMesh.count = boidInstanceCount;
+          boidMesh.instanceMatrix.needsUpdate = true;
+          return;
+        }
+
+        // Hide boid mesh during sphere phases
+        boidMesh.count = 0;
 
         // Update card orientations and animations
         sphereRef.current.children.forEach((row) => {
@@ -1139,12 +1175,16 @@ export function CardSphere({
   const isSelecting = trickState === 'participant-selection' && viewType === 'participant';
 
   return (
-    <group
-      ref={sphereRef}
-      onPointerMove={isSelecting ? (e) => { e.stopPropagation(); onPointerHit?.(e.point.clone()); } : undefined}
-      onPointerLeave={isSelecting ? () => onPointerHit?.(null) : undefined}
-    >
-      {cards}
-    </group>
+    <>
+      {/* Instanced mesh renders all cards in one draw call during boid/forming phases */}
+      <primitive object={boidMesh} />
+      <group
+        ref={sphereRef}
+        onPointerMove={isSelecting ? (e) => { e.stopPropagation(); onPointerHit?.(e.point.clone()); } : undefined}
+        onPointerLeave={isSelecting ? () => onPointerHit?.(null) : undefined}
+      >
+        {cards}
+      </group>
+    </>
   );
 }

@@ -228,7 +228,7 @@ export function Scene() {
   // Suspended when audienceCamLockedRef is true (sphere-aligned / final-flip) so the
   // spectator's head movement doesn't fight the aligned camera position.
   useFrame((_, delta) => {
-    if (viewType !== 'audience' || isUnlinked || audienceCamLockedRef.current || !hasAudienceCamTargetRef.current) return;
+    if (viewType !== 'audience' || isUnlinked || audienceCamLockedRef.current || !hasAudienceCamTargetRef.current || showPhase === 'end-gallery') return;
     const t = Math.min(0.15 * delta * 60, 1);
     camera.quaternion.slerp(audienceCamTargetQuatRef.current, t);
   });
@@ -330,16 +330,16 @@ export function Scene() {
     return () => { socket.off('pointer-hit', handle); };
   }, [socket, viewType]);
 
-  // Initialize scene
+  // Initialize scene — disable shadow maps entirely on Quest (nothing receives them anyway)
   useEffect(() => {
-    gl.shadowMap.enabled = true;
+    gl.shadowMap.enabled = !isPresenting;
     gl.shadowMap.type = THREE.PCFSoftShadowMap;
-  }, [gl]);
+  }, [gl, isPresenting]);
 
   return (
     <>
       <Preload all />
-      <Environment preset="sunset" intensity={1} blur={0.65} />
+      <Environment preset="sunset" intensity={1} blur={0.65} enableShadows={!isPresenting} />
       {!isPresenting && (
         <OrbitControls
           makeDefault
@@ -350,7 +350,7 @@ export function Scene() {
           target={[0, 0, 0]}
           enableDamping
           dampingFactor={0.1}
-          enabled={!isDeviceMovementEnabled && viewType !== 'audience'}
+          enabled={!isDeviceMovementEnabled && (viewType !== 'audience' || showPhase === 'end-gallery')}
         />
       )}
       <DeviceOrientationControls enabled={isDeviceMovementEnabled && !isPresenting} />
@@ -378,11 +378,11 @@ export function Scene() {
       
       {/* Pointer hit indicator - visible to both roles during card selection */}
       {currentState === 'participant-selection' && pointerHitPos && (
-        <PointerIndicator position={pointerHitPos} />
+        <PointerIndicator position={pointerHitPos} viewType={viewType} />
       )}
 
       {/* Headset indicator - only visible to audience after unlink */}
-      {viewType === 'audience' && isUnlinked && (
+      {viewType === 'audience' && isUnlinked && showPhase !== 'end-gallery' && (
         <HeadsetIndicator
           position={[0, 0, 0]}
           quaternionRef={headsetIndicatorQuatRef}

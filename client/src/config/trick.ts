@@ -3,7 +3,7 @@ import { CardSuit, CardValue } from '@/types/cards';
 export const TRICK_CONFIG = {
   FORCED_CARD: {
     suit: 'diamonds' as CardSuit,
-    value: '7' as CardValue,
+    value: '10' as CardValue,
   },
 
   ANIMATION_DURATIONS: {
@@ -49,7 +49,10 @@ export const TRICK_CONFIG = {
     },
     // XR-specific settings — applied automatically when Quest/headset is presenting
     xr: {
-      boidFrameSkip: 2,     // run boid simulation every N frames
+      boidFrameSkip: 3,      // run boid simulation every N frames (was 2)
+      formingDuration: 3000, // ms cards spend flying to sphere (default 5000)
     },
+    // Audience-specific forming duration — longer so the effect is more dramatic from outside
+    audienceFormingDuration: 10000,
   },
 } as const;

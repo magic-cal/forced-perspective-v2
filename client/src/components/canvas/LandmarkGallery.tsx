@@ -56,11 +56,11 @@ export function LandmarkGallery({
     };
 
     loader.load(
-      LANDMARKS[index],
+      LANDMARKS[index].src,
       applyTexture,
       undefined,
       (err) => {
-        console.error('Landmark image load error:', LANDMARKS[index], err);
+        console.error('Landmark image load error:', LANDMARKS[index].src, err);
         loader.load('/src/assets/house.jpg', applyTexture, undefined, () => {
           if (active) setTexture(null);
         });
@@ -111,7 +111,11 @@ export function LandmarkGallery({
         // key forces a new material whenever the texture changes — meshBasicMaterial
         // needs shader recompilation (USE_MAP define) when going from no-map to a map,
         // and R3F doesn't always set needsUpdate automatically for that transition.
-        <mesh key={texture?.uuid ?? 'loading'} position={[0, 0, 0]}>
+        <mesh
+          key={texture?.uuid ?? 'loading'}
+          position={[0, 0, 0]}
+          rotation={[0, (LANDMARKS[index].initialYaw * Math.PI) / 180, 0]}
+        >
           <sphereGeometry args={[50, 128, 64]} />
           <meshBasicMaterial map={texture} side={BackSide} />
         </mesh>
@@ -134,7 +138,7 @@ export function LandmarkGallery({
               zIndex: 100,
               pointerEvents: 'none',
             }}>
-              <img src={LANDMARKS[index]} alt="landmark" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
+              <img src={LANDMARKS[index].src} alt="landmark" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
             </div>
           )}
 
