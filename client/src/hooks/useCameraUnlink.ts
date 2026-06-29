@@ -77,15 +77,21 @@ export function useCameraUnlink(options: CameraUnlinkOptions = {}) {
     const xzDist = xzVec.length();
     const targetDistance = sphereRadius * 3;
 
-    // Start angle: use XZ direction of current position.
-    // If near origin (spectator was at centre), fall back to camera's look direction.
-    let startAngle: number;
-    if (xzDist > 0.1) {
-      startAngle = Math.atan2(startPosition.z, startPosition.x);
-    } else {
-      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      startAngle = Math.atan2(fwd.z, fwd.x);
-    }
+    // Derive start angle from camera forward direction so the 180° sweep ends
+    // *in front of* the headset model face (startAngle + π = forward direction).
+    //
+    // Why not use camera position?  For a computer spectator, position and forward
+    // are antiparallel (camera is outside the sphere looking in), so both approaches
+    // give the same answer.  For an XR headset the camera sits *inside* the sphere
+    // at an arbitrary room-space position — the position direction is meaningless for
+    // determining where "in front" is.  Forward direction is always correct.
+    //
+    // Why +π?  currentAngle = startAngle + π*t, so at t=1 the camera lands at
+    // startAngle + π.  We want that endpoint to equal forwardAngle, therefore
+    // startAngle = forwardAngle + π.  This also guarantees the early-animation
+    // lookAt matches the participant-rotation slerp (no jump on first frame).
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const startAngle = Math.atan2(fwd.z, fwd.x) + Math.PI;
 
     debug.camera(`Unlink — startAngle: ${(startAngle * 180 / Math.PI).toFixed(1)}°  startR: ${xzDist.toFixed(1)}  targetR: ${targetDistance}`);
 

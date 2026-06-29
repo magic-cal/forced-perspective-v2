@@ -21,11 +21,11 @@ export const TRICK_CONFIG = {
 
   SPHERE_ALIGNMENT: {
     // Duration to slow down rotation and align sphere
-    duration: 2000,
+    duration: 5000,
     // Easing for rotation slowdown
-    rotationSlowdownDuration: 500,
+    rotationSlowdownDuration: 1000,
     // Duration of the audience camera move into the aligned line-of-sight (ms)
-    audienceCamDuration: 2500,
+    audienceCamDuration: 5000,
   },
 
   CARD_FLIP: {
@@ -49,10 +49,10 @@ export const TRICK_CONFIG = {
     },
     // XR-specific settings — applied automatically when Quest/headset is presenting
     xr: {
-      boidFrameSkip: 3,      // run boid simulation every N frames (was 2)
-      formingDuration: 3000, // ms cards spend flying to sphere (default 5000)
+      boidFrameSkip: 3,      // run boid simulation every N frames during setup only
+      formingDuration: 2000, // ms cards spend flying to sphere in XR
     },
     // Audience-specific forming duration — longer so the effect is more dramatic from outside
-    audienceFormingDuration: 10000,
+    audienceFormingDuration: 20000,
   },
 } as const;

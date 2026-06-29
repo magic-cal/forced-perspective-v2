@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { BackSide } from 'three';
 import { LANDMARKS } from '@/config/landmarks';
 import { useSocket } from '@/sockets/SocketProvider';
+import { useShowFlowStore } from '@/store/useShowFlowStore';
 
 
 /**
@@ -13,16 +14,18 @@ import { useSocket } from '@/sockets/SocketProvider';
  */
 export function LandmarkGallery({
   onFinish,
+  onIndexChange,
   indexEvent = 'landmark-index',
   finishEvent = 'landmark-finish',
   showProgress = false,
 }: {
   onFinish?: () => void;
+  onIndexChange?: (index: number) => void;
   indexEvent?: string;
   finishEvent?: string;
   showProgress?: boolean;
 }) {
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(() => useShowFlowStore.getState().galleryIndex);
   const socket = useSocket();
   const { gl } = useThree();
   const maxAnisotropy = gl.capabilities.getMaxAnisotropy();
@@ -48,7 +51,8 @@ export function LandmarkGallery({
       tex.needsUpdate = true;
       const img = tex.image as HTMLImageElement;
       const ratio = img ? img.naturalWidth / img.naturalHeight : 2;
-      setDisplayMode(ratio >= 1.9 && ratio <= 2.1 ? 'spherical' : 'flat');
+      const forceFlat = LANDMARKS[index].flat ?? false;
+      setDisplayMode(!forceFlat && ratio >= 1.9 && ratio <= 2.1 ? 'spherical' : 'flat');
       const prev = lastTextureRef.current;
       lastTextureRef.current = tex;
       setTexture(tex);
@@ -61,7 +65,7 @@ export function LandmarkGallery({
       undefined,
       (err) => {
         console.error('Landmark image load error:', LANDMARKS[index].src, err);
-        loader.load('/src/assets/house.jpg', applyTexture, undefined, () => {
+        loader.load('/src/assets/equirectangular/DiamondMine1.jpg', applyTexture, undefined, () => {
           if (active) setTexture(null);
         });
       },
@@ -74,7 +78,10 @@ export function LandmarkGallery({
   useEffect(() => {
     if (!socket) return undefined;
     const handleSetIndex = (data: { index: number }) => {
-      setIndex(Math.max(0, Math.min(LANDMARKS.length - 1, data.index)));
+      const clamped = Math.max(0, Math.min(LANDMARKS.length - 1, data.index));
+      setIndex(clamped);
+      useShowFlowStore.getState().setGalleryIndex(clamped);
+      onIndexChange?.(clamped);
     };
     socket.on(indexEvent, handleSetIndex);
     return () => socket.off(indexEvent, handleSetIndex);

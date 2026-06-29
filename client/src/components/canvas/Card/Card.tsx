@@ -1,6 +1,5 @@
-import { memo, useRef, useMemo, useEffect } from "react";
+import { memo, useRef, useMemo, useEffect, useState } from "react";
 import * as THREE from "three";
-import { useLoader } from "@react-three/fiber";
 import { CardSuit, CardValue, CARD_DIMENSIONS } from "../../../types/cards";
 import { FlipState, ForcedValue, ViewType } from "./types";
 import { useCardSelectionStore } from "@/store/cardSelectionStore";
@@ -101,30 +100,39 @@ export const Card = memo(function Card({
     return cardBacks[`../../../assets/playingCardBacks/${fileName}`] || '';
   }, []);
 
-  // Load textures using useLoader with error handling
-  const [frontTexture, backTexture] = useLoader(THREE.TextureLoader, [
-    frontTextureUrl,
-    backTextureUrl,
-  ].filter(Boolean), (loader) => {
-    loader.setCrossOrigin('anonymous');
-  });
+  // Load textures imperatively — avoids Suspense suspension that causes a full-scene
+  // black flash. useLoader is intentionally not used here for the same reason it was
+  // removed from CardSphere: the forced-card face texture (excluded from the deck) is
+  // never pre-loaded, so useLoader would suspend the scene on final-flip.
+  const [frontTexture, setFrontTexture] = useState<THREE.Texture | null>(null);
+  const [backTexture, setBackTexture] = useState<THREE.Texture | null>(null);
 
-  // Configure textures once when they load
+  useEffect(() => {
+    if (!frontTextureUrl) return;
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('anonymous');
+    loader.load(frontTextureUrl, setFrontTexture);
+  }, [frontTextureUrl]);
+
+  useEffect(() => {
+    if (!backTextureUrl) return;
+    const loader = new THREE.TextureLoader();
+    loader.load(backTextureUrl, setBackTexture);
+  }, [backTextureUrl]);
+
   useEffect(() => {
     if (frontTexture) {
       materialsRef.current.front.map = frontTexture;
       materialsRef.current.front.needsUpdate = true;
-    } else {
-      console.warn('Front texture could not be loaded');
     }
-    
+  }, [frontTexture]);
+
+  useEffect(() => {
     if (backTexture) {
       materialsRef.current.back.map = backTexture;
       materialsRef.current.back.needsUpdate = true;
-    } else {
-      console.warn('Back texture could not be loaded');
     }
-  }, [frontTexture, backTexture]);
+  }, [backTexture]);
 
   // Update material properties when needed.
   // emissive and emissiveIntensity are plain uniforms — Three.js uploads them automatically

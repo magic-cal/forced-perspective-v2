@@ -1,5 +1,6 @@
 import { useDeviceOrientationStore } from "@/store/deviceOrientationStore";
 import { OrbitControls, Preload } from "@react-three/drei";
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { useFrame, useThree } from "@react-three/fiber";
 import { useXR } from "@react-three/xr";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -35,6 +36,7 @@ export function Scene() {
   const { camera, gl, scene } = useThree();
   const showPhase = useShowFlowStore((s) => s.showPhase);
   const galleryEnabled = useShowFlowStore((s) => s.galleryEnabled);
+  const orbitControlsRef = useRef<OrbitControlsImpl>(null);
   const lastBroadcastQuatRef = useRef({ x: 0, y: 0, z: 0, w: 1 });
   const [pointerHitPos, setPointerHitPos] = useState<THREE.Vector3 | null>(null);
   const lastPointerEmitRef = useRef(0);
@@ -284,11 +286,22 @@ export function Scene() {
     }
   });
 
+  // Audience: reset camera to face the first panorama when end-gallery opens
+  useEffect(() => {
+    if (showPhase !== 'end-gallery' || viewType !== 'audience') return;
+    camera.position.set(0, 0, 6);
+    camera.lookAt(0, 0, 0);
+    orbitControlsRef.current?.update();
+  }, [showPhase, viewType, camera]);
+
   // Audience/spectator: respond to scene-switching events from the magician
   useEffect(() => {
     if (!socket) return undefined;
     const handleGallerySkip = () => useShowFlowStore.getState().setShowPhase('trick');
-    const handleEndGalleryStart = () => useShowFlowStore.getState().setShowPhase('end-gallery');
+    const handleEndGalleryStart = () => {
+      useShowFlowStore.getState().setGalleryIndex(0);
+      useShowFlowStore.getState().setShowPhase('end-gallery');
+    };
     const handleTrickReset = () => useShowFlowStore.getState().reset();
     socket.on('gallery-skip', handleGallerySkip);
     socket.on('end-gallery-start', handleEndGalleryStart);
@@ -342,6 +355,7 @@ export function Scene() {
       <Environment preset="sunset" intensity={1} blur={0.65} enableShadows={!isPresenting} />
       {!isPresenting && (
         <OrbitControls
+          ref={orbitControlsRef}
           makeDefault
           minPolarAngle={0}
           maxPolarAngle={Math.PI}
@@ -361,6 +375,11 @@ export function Scene() {
         <LandmarkGallery
           indexEvent="end-landmark-index"
           finishEvent="end-landmark-finish"
+          onIndexChange={viewType === 'audience' ? () => {
+            camera.position.set(0, 0, 6);
+            camera.lookAt(0, 0, 0);
+            orbitControlsRef.current?.update();
+          } : undefined}
         />
       ) : showPhase === 'trick' ? (
         <CardSphere

@@ -16,6 +16,10 @@ export default defineConfig({
     port: Number(process.env.PORT) || 10050,
     https: true,
     host: true,
+    fs: {
+      // Allow serving files from the monorepo root (packages live outside client/)
+      allow: ['..'],
+    },
     proxy: (() => {
       const backendPort = process.env.VITE_BACKEND_PORT || process.env.BACKEND_PORT || "8080";
       const backendHost = process.env.VITE_BACKEND_HOST || "localhost";

@@ -1,4 +1,4 @@
-import { useFrame, useLoader } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useRef, useMemo, useEffect, useState, useCallback } from "react";
 import * as THREE from "three";
 import { useXR } from "@react-three/xr";
@@ -152,11 +152,13 @@ export function CardSphere({
     const backs = import.meta.glob('../../assets/playingCardBacks/*.svg', { as: 'url', eager: true });
     return backs['../../assets/playingCardBacks/RED_BACK.svg'] || '';
   }, []);
-  const boidBackTexture = useLoader(THREE.TextureLoader, boidBackUrl);
 
   // InstancedMesh for boid/forming phases — ~500 cards in 6 draw calls instead of ~3000.
   // BoxGeometry face order: +X, -X, +Y, -Y, +Z (front, faces camera), -Z (back)
   // Mirrors Card.tsx's material layout: transparent edges, cream front, textured back.
+  // useLoader is intentionally avoided here — it suspends the entire Suspense boundary
+  // (including Environment), causing a flash of the bare canvas background colour.
+  // Instead the texture is loaded imperatively and applied to the material once ready.
   const boidMesh = useMemo(() => {
     const geo = new THREE.BoxGeometry(
       CARD_DIMENSIONS.width,
@@ -168,14 +170,26 @@ export function CardSphere({
     // always win on the transition frame where both occupy the same world position — prevents
     // the diagonal seam caused by the depth buffer bisecting overlapping coplanar quads.
     const frontMat = new THREE.MeshLambertMaterial({ color: '#f8f0e0', side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
-    const backMat  = new THREE.MeshLambertMaterial({ map: boidBackTexture, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const backMat  = new THREE.MeshLambertMaterial({ color: '#f8f0e0', side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const mesh = new THREE.InstancedMesh(geo, [edgeMat, edgeMat, edgeMat, edgeMat, frontMat, backMat], MAX_BOID_INSTANCES);
     mesh.count = 0;
     mesh.frustumCulled = false;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     return mesh;
-  }, [boidBackTexture]);
+  }, []);
+
+  // Load back texture without suspending, then patch it onto the material once ready
+  useEffect(() => {
+    if (!boidBackUrl) return;
+    const loader = new THREE.TextureLoader();
+    loader.load(boidBackUrl, (tex) => {
+      const mats = boidMesh.material as THREE.Material[];
+      const backMat = mats[5] as THREE.MeshLambertMaterial;
+      backMat.map = tex;
+      backMat.needsUpdate = true;
+    });
+  }, [boidBackUrl, boidMesh]);
 
   useEffect(() => {
     return () => {
@@ -749,7 +763,9 @@ export function CardSphere({
         // card to its sphere slot while it continues flying like a bird.
         if (trickState === 'setup' || trickState === 'forming') {
           frameCountRef.current++;
-          if (frameCountRef.current % boidFrameSkip !== 0) return;
+          // Only skip frames during free-flight (setup). During forming the cards are
+          // landing — skipping frames makes the approach look jerky in XR.
+          if (trickState === 'setup' && frameCountRef.current % boidFrameSkip !== 0) return;
           // --- snapshot positions + velocities ---
           let boidCount = 0;
           sphereRef.current.children.forEach((row) => {
